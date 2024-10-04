@@ -1,3 +1,8 @@
+/*
+ * Copyright (c) 2024 ---Anjusree Karnavar,Griffith University
+ */
+
+
 import torch
 import torch.nn as nn
 import numpy as np

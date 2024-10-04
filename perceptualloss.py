@@ -1,3 +1,8 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+#Anjusree Karnavar Griffith University 2024
+#anjusree.karnavar@griffithuni.edu.au
+# --------------------------------------------------------
+
 
 # --- Imports --- #
 import torch

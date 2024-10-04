@@ -1,3 +1,10 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+#Anjusree Karnavar Griffith University 2024
+#anjusree.karnavar@griffithuni.edu.au
+# --------------------------------------------------------
+
+
+
 import argparse
 import datetime
 import json

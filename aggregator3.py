@@ -1,3 +1,10 @@
+
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+#Anjusree Karnavar Griffith University 2024
+#anjusree.karnavar@griffithuni.edu.au
+# --------------------------------------------------------
+
+
 import torch
 import torch.nn as nn
 import numpy as np
