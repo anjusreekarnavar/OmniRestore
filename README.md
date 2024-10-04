@@ -8,4 +8,4 @@ for using multigpus include --nproc_per_node=num_gpus
 
 For running aggregator run
 
-python -m torch.distributed.launch 
+python -m torch.distributed.launch moe_trainddp.py
