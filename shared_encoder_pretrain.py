@@ -181,7 +181,7 @@ def main(args):
     model=MultiImageRestoration(shared_encoder,decoder1,decoder2)
     model.to(device)
     
-    tasks=['denoising','deblurring','super_resolution','inpainting','demasking']
+    tasks = ['denoising' ,'deblurring' ,'super_resolution' ,'inpainting' ,'demasking']
     eff_batch_size = args.batch_size * args.accum_iter * misc.get_world_size()
     
     if args.lr is None:  # only base_lr is specified
