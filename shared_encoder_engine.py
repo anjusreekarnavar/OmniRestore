@@ -67,26 +67,25 @@ def train_one_epoch(
             # output[] is list that has the predictions from 5 decoders in the order
             # [denoising, deblurring, super_resolution, inpainting, demasking]
             # decoder_dict(task) will return the index of the current task
-            task_output = output[decoder_dict(task)]
+            task_output = output[decoder_dict[task]]
 
             prediction = task_output[0]
             loss = task_output[1]
             p = convert.unpatchify(prediction)
             p = convert.denormalization(p)
 
-            task_loss = loss
-            task_loss_value = task_loss.item()
-            if not math.isfinite(denoiseloss_value):
+            task_loss_value = loss.item()
+            if not math.isfinite(task_loss_value):
                 print("Loss is {}, stopping training".format(task_loss_value))
                 sys.exit(1)
 
             loss /= accum_iter
 
-            req_param = list(model.encoder.parameters()) + list(
-                model.decoder_dict[task].parameters()
+            req_param = list(model.module.encoder.parameters()) + list(
+                model.module.decoder_dict[task].parameters()
             )
 
-            print("epoch", epoch, "denoising training loss", task_loss_value)
+            print("epoch", epoch, task, "training loss", task_loss_value)
             loss_scaler(
                 loss,
                 optimizer,
@@ -106,7 +105,6 @@ def train_one_epoch(
                 log_writer.add_scalar(
                     "denoisetraining loss", reduce_denoise, epoch_1000x
                 )
-                # total_loss_denoise+=denoiseloss_value
 
     model.eval()
 

@@ -38,7 +38,7 @@ def get_args_parser():
 
     parser.add_argument(
         "--batch_size",
-        default=128,
+        default=3,
         type=int,
         help="Batch size per GPU (effective batch size is batch_size * accum_iter * # gpus",
     )
