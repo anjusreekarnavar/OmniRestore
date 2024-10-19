@@ -48,7 +48,7 @@ def  train_one_epoch(model, data_loader_train, data_loader_val, tasks, device, o
                     lr_sched.adjust_learning_rate(optimizer, data_iter_step / len(data_loader_train) + epoch, args)
                         
             with torch.cuda.amp.autocast():
-                output, _ = model(clean_img, distorted, mask_ratio, task)
+                output, _ = model(clean_img, distorted, mask_ratio, tasks)
 
             # output[] is list that has the predictions from 5 decoders in the order
             # [denoising, deblurring, super_resolution, inpainting, demasking]
