@@ -34,7 +34,6 @@ def  train_one_epoch(model, data_loader_train, data_loader_val, tasks, device, o
     #decoder_dict = {'denoising': 0, 'deblurring': 1, 'super_resolution': 2, 'inpainting': 3, 'demasking': 4 }
     decoder_dict = {task: int(idx) for idx, task in enumerate(tasks)}
 
-    # TODO: verify the the list tasks[] contains the task in the same order
     for task in tasks:
 
         for data_iter_step, data_train in enumerate((data_loader_train[task]), 0):
@@ -51,9 +50,9 @@ def  train_one_epoch(model, data_loader_train, data_loader_val, tasks, device, o
             with torch.cuda.amp.autocast():
                 output, _ = model(clean_img, distorted, mask_ratio, task)
 
-            # output is list that has the predictions from 5 decoders in the order
-            # denoising, deblurring, super_resolution, inpainting, demasking]
-            # ecoder_dict(task) will return the index of the current task
+            # output[] is list that has the predictions from 5 decoders in the order
+            # [denoising, deblurring, super_resolution, inpainting, demasking]
+            # decoder_dict(task) will return the index of the current task
             task_output = output[decoder_dict(task)]
 
             prediction = task_output[0]    
