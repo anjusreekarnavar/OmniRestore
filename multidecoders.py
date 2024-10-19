@@ -25,18 +25,26 @@ class MultiImageRestoration(nn.Module):
         # Initialize DecoderTask3, DecoderTask4, and DecoderTask5 similarly
         
     def forward(self, imgs, inputs, mask_ratio, task):
-        encoder_output=[]
+        encoder_output = []
+        decoder_pred = []
         latent, mask,ids_restore = self.encoder(inputs,mask_ratio)
-        current_decoder = self.decoder_dict[task]
-        #out1 = self.noise_decoder(imgs,latent,ids_restore,mask)
-        #out2 = self.blur_decoder(imgs,latent,ids_restore,mask)
-        #out3 = self.super_decoder(imgs,latent,ids_restore,mask)
-        #out4 = self.inpaint_decoder(imgs,latent,ids_restore,mask)
-        #out5 = self.mask_decoder(imgs,latent,ids_restore,mask)
-        prediction = current_decoder(imgs,latent,ids_restore,mask)
+
+        # The list decoder_pred[] should be appended in the order
+        # [denoising, deblurring, super_resolution, inpainting, demasking]
+        noise_pred = self.noise_decoder(imgs, latent, ids_restore, mask)
+        decoder_pred.append(noise_pred)
+        blur_pred = self.blur_decoder(imgs, latent, ids_restore, mask)
+        decoder_pred.append(blur_pred)
+        super_pred = self.super_decoder(imgs, latent, ids_restore, mask)
+        decoder_pred.append(super_pred)
+        inpaint = self.inpaint_decoder(imgs, latent, ids_restore, mask)
+        decoder_pred.append(inpaint)
+        mask = self.mask_decoder(imgs, latent, ids_restore, mask)
+        decoder_pred.append(mask) 
+
         encoder_output.append(latent)
         encoder_output.append(mask)
         encoder_output.append(ids_restore)
-        #return out1,out2,out3,out4,out5,encoder_output
-        return prediction, encoder_output
+
+        return decoder_pred, encoder_output
 

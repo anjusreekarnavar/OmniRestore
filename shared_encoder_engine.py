@@ -30,14 +30,11 @@ def  train_one_epoch(model, data_loader_train, data_loader_val, tasks, device, o
 
     convert=Conversion()
 
-    weight_vec = torch.zeros(5)
-    loss_vec = torch.zeros(5)
+    # Index of each decoder 
     decoder_dict = {'denoising': 0, 'deblurring': 1, 'super_resolution': 2, 'inpainting': 3, 'demasking': 4 }
 
+    # TODO: verify the the list tasks[] contains the task in the same order
     for task in tasks:
-
-        weight_vec.zero_()
-        weight_vec[decoder_dict(task)] = 1
 
         for data_iter_step, data_train in enumerate((data_loader_train[task]), 0):
             
@@ -51,10 +48,15 @@ def  train_one_epoch(model, data_loader_train, data_loader_val, tasks, device, o
                     lr_sched.adjust_learning_rate(optimizer, data_iter_step / len(data_loader_train) + epoch, args)
                         
             with torch.cuda.amp.autocast():
-                output,_= model(clean_img, distorted, mask_ratio, task)
+                output, _ = model(clean_img, distorted, mask_ratio, task)
 
-            prediction = output[0]    
-            loss = output[1]     
+            # output is list that has the predictions from 5 decoders in the order
+            # denoising, deblurring, super_resolution, inpainting, demasking]
+            # ecoder_dict(task) will return the index of the current task
+            task_output = output[decoder_dict(task)]
+
+            prediction = task_output[0]    
+            loss = task_output[1]     
             p = convert.unpatchify(prediction)
             p = convert.denormalization(p)
 
@@ -66,10 +68,6 @@ def  train_one_epoch(model, data_loader_train, data_loader_val, tasks, device, o
                 sys.exit(1)
 
             loss /= accum_iter
-            loss_vec[decoder_dict(task)] = loss
-
-            wt_loss_sum = torch.sum(loss_vec * weight_vec)
-
 
             print('epoch',epoch,'denoising training loss',task_loss_value)
             loss_scaler(loss, optimizer, parameters=model.decoder_dict[task].parameters(),
