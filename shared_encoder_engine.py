@@ -9,8 +9,6 @@ import util.misc as misc
 from util.misc import NativeScalerWithGradNormCount as NativeScaler
 import util.lr_sched as lr_sched
 from torch.utils.tensorboard import SummaryWriter
-from callback import callback_For_Threshold
-from callback import EarlyStopping
 import torchvision.transforms as transforms
 from augmentations import converto_low_resolution, blur_input_image, to_low_resolution
 from temporary import Conversion
@@ -79,7 +77,7 @@ def train_one_epoch(
                 print("Loss is {}, stopping training".format(task_loss_value))
                 sys.exit(1)
 
-            loss /= accum_iter
+            loss = loss / accum_iter
 
             req_param = list(model.module.encoder.parameters()) + list(
                 model.module.decoder_dict[task].parameters()

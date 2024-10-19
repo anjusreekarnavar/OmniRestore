@@ -25,7 +25,7 @@ from decoder import Decoder
 from util import misc
 import yaml
 import model_restoration
-import options as option
+#import options as option
 from tensorboardX import SummaryWriter
 from shared_encoder_engine import train_one_epoch
 import timm.optim.optim_factory as optim_factory
@@ -144,7 +144,7 @@ def get_args_parser():
     parser.add_argument(
         "--world_size", default=1, type=int, help="number of distributed processes"
     )
-    parser.add_argument("--local-rank", default=0, type=int)
+    parser.add_argument("--local_rank", default=0, type=int)
     parser.add_argument("--dist_on_itp", action="store_true")
     parser.add_argument(
         "--dist_url", default="env://", help="url used to set up distributed training"
@@ -155,7 +155,7 @@ def get_args_parser():
 
 def loading_checkpoint(model):
 
-    path = "/home/ven073/anju/dmae2/dmae_base_sigma_0.25_mask_0.75_1100e.pth"
+    path = "/home/joseph/multi_distortion-based_image_restoration/dmae_base_sigma_0.25_mask_0.75_1100e.pth"
 
     pretrained_path = torch.load(path)
 
@@ -194,7 +194,7 @@ def main(args):
 
     cudnn.benchmark = True
 
-    with open("/home/ven073/anju/dmae2/config.yaml", "r") as file:
+    with open("/home/joseph/multi_distortion-based_image_restoration/config.yaml", "r") as file:
         config = yaml.safe_load(file)
 
     data_loader_train = create_dataset_train(config, args)
@@ -206,7 +206,7 @@ def main(args):
     # load the pre trained model
     print("cuda availability", torch.cuda.is_available())
     # define the model
-    path = "/home/ven073/anju/dmae2/dmae_base_sigma_0.25_mask_0.75_1100e.pth"
+    path = "/home/joseph/multi_distortion-based_image_restoration/dmae_base_sigma_0.25_mask_0.75_1100e.pth"
     shared_encoder = model_restoration.__dict__[args.model](
         norm_pix_loss=args.norm_pix_loss
     )

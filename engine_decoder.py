@@ -11,8 +11,8 @@ from util.misc import NativeScalerWithGradNormCount as NativeScaler
 from inpaint_mask_generator import generate_mask,patch_generator2,mask_to
 import util.lr_sched as lr_sched
 from torch.utils.tensorboard import SummaryWriter
-from callback import callback_For_Threshold
-from callback import EarlyStopping
+from bkp_files.callback import callback_For_Threshold
+from bkp_files.callback import EarlyStopping
 import torchvision.transforms as transforms
 from augmentations import converto_low_resolution,blur_input_image,to_low_resolution
 from temporary import Conversion
