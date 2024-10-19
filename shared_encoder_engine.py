@@ -96,58 +96,68 @@ def train_one_epoch(
             if (data_iter_step + 1) % accum_iter == 0:
                 optimizer.zero_grad()
 
-            reduce_denoise = misc.all_reduce_mean(task_loss_value)
+            reduce_distortion = misc.all_reduce_mean(task_loss_value)
 
             if log_writer is not None and (data_iter_step + 1) % accum_iter == 0:
                 epoch_1000x = int(
                     (data_iter_step / len(data_loader_train) + epoch) * 1000
                 )
+
+                message = task + "training loss"
                 log_writer.add_scalar(
-                    "denoisetraining loss", reduce_denoise, epoch_1000x
+                    message, reduce_distortion, epoch_1000x
                 )
 
-    model.eval()
+        model.eval()
 
-    with torch.no_grad():
-        for data_iter_step, data_val in enumerate((data_loader_val), 0):
+        with torch.no_grad():
+            for data_iter_step, data_val in enumerate((data_loader_val[task]), 0):
 
-            clean_img = data_val[0].to(device, non_blocking=True)
-            distorted = data_val[1].to(device, non_blocking=True)
-            clean_img = transforms.Resize((224, 224), interpolation=PIL.Image.BICUBIC)(
-                clean_img
-            )
-            distorted = transforms.Resize((224, 224), interpolation=PIL.Image.BICUBIC)(
-                distorted
-            )
-
-            with torch.cuda.amp.autocast():
-                output, _ = model(clean_img, distorted, mask_ratio)
-            prediction = output[0]
-            loss = output[1]
-            p = convert.unpatchify(prediction)
-            p = convert.denormalization(p)
-
-            save_image(p[0], "/home/ven073/anju/dmae2/denoised.jpg")
-
-            denoise_loss = loss
-            denoiseloss_value = denoise_loss.item()
-
-            print("epoch", epoch, "denoising validation loss", denoiseloss_value)
-            reduce_denoise = misc.all_reduce_mean(denoiseloss_value)
-            if log_writer is not None and (data_iter_step + 1) % accum_iter == 0:
-                epoch_1000x = int(
-                    (data_iter_step / len(data_loader_val) + epoch) * 1000
+                clean_img = data_val[0].to(device, non_blocking=True)
+                distorted = data_val[1].to(device, non_blocking=True)
+                clean_img = transforms.Resize((224, 224), interpolation=PIL.Image.BICUBIC)(
+                    clean_img
                 )
-                log_writer.add_scalar(
-                    "denoisevalidation loss", reduce_denoise, epoch_1000x
+                distorted = transforms.Resize((224, 224), interpolation=PIL.Image.BICUBIC)(
+                    distorted
                 )
-            if args.output_dir and (epoch % 100 == 0 or epoch + 1 == args.epochs):
 
-                torch.save(
-                    {
-                        "model_state_dict": model.module.decoder1.state_dict(),
-                    },
-                    f"{args.output_dir}/decoder_denoise_epoch_{epoch+1}.pth",
-                )
+                with torch.cuda.amp.autocast():
+                    output, _ = model(clean_img, distorted, mask_ratio, tasks)
+
+                # output[] is list that has the predictions from 5 decoders in the order
+                # [denoising, deblurring, super_resolution, inpainting, demasking]
+                # decoder_dict(task) will return the index of the current task
+                task_output = output[decoder_dict[task]]
+
+                prediction = task_output[0]
+                loss = task_output[1]
+                p = convert.unpatchify(prediction)
+                p = convert.denormalization(p)
+
+                #save_image(p[0], "/home/ven073/anju/dmae2/denoised.jpg")
+
+                task_loss_value = loss.item()
+
+                print("epoch", epoch, task, "validation loss", task_loss_value)
+
+                reduce_distortion = misc.all_reduce_mean(task_loss_value)
+                if log_writer is not None and (data_iter_step + 1) % accum_iter == 0:
+                    epoch_1000x = int(
+                        (data_iter_step / len(data_loader_val) + epoch) * 1000
+                    )
+                    message = task + "validation loss"
+                    log_writer.add_scalar(
+                        message, reduce_distortion, epoch_1000x
+                    )
+                if args.output_dir and (epoch % 100 == 0 or epoch + 1 == args.epochs):
+
+                    file_name = "decoder_" + task + "_epoch" + str(epoch + 1) + ".pth"
+                    torch.save(
+                        {
+                            "model_state_dict": model.module.decoder_dict[task].state_dict(),
+                        },
+                        f"{args.output_dir}/{file_name}",
+                    )
 
     return model
