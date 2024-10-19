@@ -21,7 +21,7 @@ import PIL
 
 
     
-def  train_one_epoch(model,data_loader_train,data_loader_val,tasks,device,optimizer,loss_scaler,epoch,log_writer,args):
+def  train_one_epoch(model, data_loader_train, data_loader_val, tasks, device, optimizer, loss_scaler, epoch,log_writer, args):
     mask_ratio=args.mask_ratio
    
     accum_iter = args.accum_iter
@@ -30,44 +30,64 @@ def  train_one_epoch(model,data_loader_train,data_loader_val,tasks,device,optimi
 
     convert=Conversion()
 
+    weight_vec = torch.zeros(5)
+    loss_vec = torch.zeros(5)
+    decoder_dict = {'denoising': 0, 'deblurring': 1, 'super_resolution': 2, 'inpainting': 3, 'demasking': 4 }
 
-    for data_iter_step, data_train in enumerate((data_loader_train), 0):
+    for task in tasks:
+
+        weight_vec.zero_()
+        weight_vec[decoder_dict(task)] = 1
+
+        for data_iter_step, data_train in enumerate((data_loader_train[task]), 0):
             
             clean_img = data_train[0].to(device, non_blocking=True)
-            distorted=data_train[1].to(device, non_blocking=True)
+            distorted = data_train[1].to(device, non_blocking=True)
             clean_img = transforms.Resize((224, 224), interpolation=PIL.Image.BICUBIC)(clean_img)
             distorted = transforms.Resize((224, 224), interpolation=PIL.Image.BICUBIC)(distorted)
-            #task1      
+                
           
             if data_iter_step % accum_iter == 0:
                     lr_sched.adjust_learning_rate(optimizer, data_iter_step / len(data_loader_train) + epoch, args)
                         
             with torch.cuda.amp.autocast():
-                
-                output,_=model(clean_img,distorted,mask_ratio)
-            prediction=output[0]    
-            loss=output[1]     
-            p=convert.unpatchify(prediction)
-            p=convert.denormalization(p)
+                output,_= model(clean_img, distorted, mask_ratio, task)
+
+            prediction = output[0]    
+            loss = output[1]     
+            p = convert.unpatchify(prediction)
+            p = convert.denormalization(p)
+
                        
-            denoise_loss=loss
-            denoiseloss_value=denoise_loss.item()
+            task_loss = loss
+            task_loss_value = task_loss.item()
             if not math.isfinite(denoiseloss_value):
-                print("Loss is {}, stopping training".format(denoiseloss_value))
+                print("Loss is {}, stopping training".format(task_loss_value))
                 sys.exit(1)
-            denoise_loss /= accum_iter
-            print('epoch',epoch,'denoising training loss',denoiseloss_value)
-            loss_scaler(denoise_loss,optimizer, parameters=model.parameters(),
+
+            loss /= accum_iter
+            loss_vec[decoder_dict(task)] = loss
+
+            wt_loss_sum = torch.sum(loss_vec * weight_vec)
+
+
+            print('epoch',epoch,'denoising training loss',task_loss_value)
+            loss_scaler(loss, optimizer, parameters=model.decoder_dict[task].parameters(),
                         update_grad=(data_iter_step + 1) % accum_iter == 0)
+
             if (data_iter_step + 1) % accum_iter == 0:
                     optimizer.zero_grad()
-            reduce_denoise = misc.all_reduce_mean(denoiseloss_value)
+
+            reduce_denoise = misc.all_reduce_mean(task_loss_value)
+
             if log_writer is not None and (data_iter_step + 1) % accum_iter == 0:
                 epoch_1000x = int((data_iter_step / len(data_loader_train) + epoch) * 1000)
                 log_writer.add_scalar('denoisetraining loss', reduce_denoise, epoch_1000x)
                         #total_loss_denoise+=denoiseloss_value
                 
     model.eval()
+
+
     with torch.no_grad():
         for data_iter_step, data_val in enumerate((data_loader_val), 0):
             

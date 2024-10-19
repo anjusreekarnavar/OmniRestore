@@ -15,6 +15,7 @@ from pathlib import Path
 import PIL
 import torch
 import torch.backends.cudnn as cudnn
+from multi_decoder_encoder import Model_Restoration_Decoder
 import torchvision.transforms as transforms
 import torchvision.datasets as datasets
 from torch.utils.data import  DataLoader
@@ -22,19 +23,21 @@ from PIL import Image, ImageFilter,ImageOps
 import timm
 from callback import EarlyStopping
 from torch.utils.data import  DataLoader, random_split
+from decoder import Decoder
 from new_decoders import Denoise_Expert,Super_Expert,Deblur_Expert,Inpaint_Expert,Demask_Expert
 assert timm.__version__ == "0.5.4"  # version check
 from decoder import Decoder
 from util import misc
 import model_restoration
+#from torch.utils.tensorboard import SummaryWriter
 from tensorboardX import SummaryWriter
 from engine_decoder import train_one_epoch
 import timm.optim.optim_factory as optim_factory
 from util.misc import NativeScalerWithGradNormCount as NativeScaler
-from multi_decoder_encoder import Model_Restoration_Decoder1
+
 def get_args_parser():
     parser = argparse.ArgumentParser('restoreMAE pre-training', add_help=False)
-    parser.add_argument('--batch_size', default=32, type=int,
+    parser.add_argument('--batch_size', default=128, type=int,
                         help='Batch size per GPU (effective batch size is batch_size * accum_iter * # gpus')
   
     parser.add_argument('--epochs', default=1000, type=int)
@@ -47,16 +50,10 @@ def get_args_parser():
 
     parser.add_argument('--input_size', default=224, type=int,
                         help='images input size')
+
     parser.add_argument('--norm_pix_loss', action='store_true',
                         help='Use (per-patch) normalized pixels as targets for computing loss')
     parser.set_defaults(norm_pix_loss=False)
-
-    parser.add_argument('--sigma', default=0.25, type=float,
-                        help='Std of Gaussian noise')
-    parser.add_argument('--radius', default=1, type=int,
-                        help='blurring radius')
-    parser.add_argument('--downsampling_factor', default=4, type=int,
-                        help='downsampling')
     parser.add_argument('--mask_ratio', default=0.75, type=int,
                         help='masking')
     parser.add_argument('--weight_decay', type=float, default=0.05,
@@ -74,30 +71,27 @@ def get_args_parser():
                         help='epochs to warmup LR')
 
     # Dataset parameters
-    parser.add_argument('--train_data_path',default='',type=str,
+    parser.add_argument('--train_data_path', default='', type=str,
                         help='dataset path')
     parser.add_argument('--val_data_path', default='', type=str,
                         help='dataset path')
-    parser.add_argument('--decoder_depth',  default='', type=int,
-                        help='dataset path')
-
+   
+    parser.add_argument('--decoder_depth', default='', type=int,
+                        help='images input size')
+    
     parser.add_argument('--eval', action='store_true',
                         help='Perform evaluation only')
     parser.add_argument('--dist_eval', action='store_true', default=False,
                         help='Enabling distributed evaluation (recommended during training for faster monitor')
 
-    parser.add_argument('--output_dir', default='./output_dir',
-                        help='path where to save, empty for no saving')
-    parser.add_argument('--log_dir', default='./output_dir',
+    parser.add_argument('--output_dir',type=str,default='',help='path where to save, empty for no saving')
+    parser.add_argument('--log_dir', default='',
                         help='path where to tensorboard log')
     parser.add_argument('--device', default='cuda',
                         help='device to use for training / testing')
     parser.add_argument('--seed', default=0, type=int)
     parser.add_argument('--resume', default='',
                         help='resume from checkpoint')
-    parser.add_argument('--num_experts', default=5, type=int, metavar='N',
-                        help='number of experts')
-    
     parser.add_argument('--start_epoch', default=0, type=int, metavar='N',
                         help='start epoch')
     parser.add_argument('--num_workers', default=10, type=int)
@@ -134,7 +128,7 @@ def loading_checkpoint(model):
 
     model.load_state_dict(pretrained_weights, strict = False)
     return model
-def load_decoders(args):
+def load_decoders(device):
     expert=Decoder(decoder_depth=args.decoder_depth)
     expert=loading_checkpoint(expert)
     return expert
@@ -168,6 +162,9 @@ def main(args):
    
     train_dir=args.train_data_path
     val_dir=args.val_data_path
+    
+
+    
     dataset_train=DataLoaderTrain(train_dir,transform_input)
     dataset_val=DataLoaderVal(val_dir)
 
@@ -177,11 +174,13 @@ def main(args):
     if True:  # args.distributed:
         num_tasks = misc.get_world_size()
         global_rank = misc.get_rank()
+
+        print("num_tasks" + str(num_tasks))
+        print("num_tasks" + str(global_rank))
         
         sampler_train = torch.utils.data.DistributedSampler(
-            dataset_train, num_replicas=num_tasks, rank=global_rank, shuffle=True
+            dataset_train, num_replicas=num_tasks, rank=global_rank, shuffle=False
         )
-        print("Sampler_train = %s" % str(sampler_train))
         
         if args.dist_eval:
             if len(dataset_val) % num_tasks != 0:
@@ -236,9 +235,10 @@ def main(args):
     
     
     print('cuda availability', torch.cuda.is_available())
-    decoder=load_decoders(args)
-    model=Model_Restoration_Decoder1(shared_encoder,decoder)
+    decoder=load_decoders(device)
+    model=Model_Restoration_Decoder(shared_encoder,decoder)
     model.to(device)
+    
     
 
     eff_batch_size = args.batch_size * args.accum_iter * misc.get_world_size()
@@ -250,7 +250,9 @@ def main(args):
     optimizer = torch.optim.AdamW(param_groups, lr=args.lr, betas=(0.9, 0.95))
     print(optimizer)
     loss_scaler = NativeScaler()
-
+    
+    
+   
     if args.distributed:
         model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu], find_unused_parameters=True)
         
@@ -266,7 +268,7 @@ def main(args):
                 torch.save({
                 'model_state_dict': model_trained.module.encoder.state_dict(),
            
-                }, f'{args.output_dir}/shared_encoder_{epoch+1}.pth')
+                }, f'/scratch3/ven073/decoder2/shared_encoder_{epoch+1}.pth')
 
     total_time = time.time() - start_time
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))
