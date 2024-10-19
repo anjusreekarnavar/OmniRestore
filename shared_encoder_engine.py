@@ -82,11 +82,15 @@ def train_one_epoch(
 
             loss /= accum_iter
 
+            req_param = list(model.encoder.parameters()) + list(
+                model.decoder_dict[task].parameters()
+            )
+
             print("epoch", epoch, "denoising training loss", task_loss_value)
             loss_scaler(
                 loss,
                 optimizer,
-                parameters=model.decoder_dict[task].parameters(),
+                parameters=req_param,
                 update_grad=(data_iter_step + 1) % accum_iter == 0,
             )
 
