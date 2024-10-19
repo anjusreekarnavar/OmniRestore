@@ -29,7 +29,7 @@ from PIL import Image, ImageFilter,ImageOps
 import timm
 from custom_testset import TestDataset
 from callback import EarlyStopping
-from aggregator2 import MOE
+from aggregator3 import MOE
 from torch.utils.data import  DataLoader, random_split
 from decoder import Decoder1,Decoder2,Decoder3,Decoder4,Decoder5
 
@@ -269,7 +269,7 @@ def main(args):
             mask_ratio=args.mask_ratio
             org_input=convert.normalization(samples)
             #task1
-            output_moe=moe(org_input,imgs_noised,args)
+            output_moe,_=moe(org_input,imgs_noised,args)
             output_moe=convert.unpatchify(output_moe)
             a=convert.denormalization(output_moe)
             temp_psnr1, temp_ssim1, N = compute_psnr_ssim(a, samples)
@@ -288,7 +288,7 @@ def main(args):
             org_input=convert.normalization(samples)        
             #task2
 
-            output_moe=moe(org_input,lrimage,args)
+            output_moe,_=moe(org_input,lrimage,args)
             output_moe=convert.unpatchify(output_moe)
             b=convert.denormalization(output_moe)
             temp_psnr2, temp_ssim2, N = compute_psnr_ssim(b, samples)
@@ -307,7 +307,7 @@ def main(args):
             mask_ratio=args.mask_ratio
             org_input=convert.normalization(samples)     
             #task3
-            output_moe=moe(org_input,blur_image,args)
+            output_moe,_=moe(org_input,blur_image,args)
             output_moe=convert.unpatchify(output_moe)
             c=convert.denormalization(output_moe)
             temp_psnr3, temp_ssim3, N = compute_psnr_ssim(c, samples)
@@ -328,7 +328,7 @@ def main(args):
             
             #task4
          
-            output_moe=moe(org_input,inpaint_mask,args)
+            output_moe,_=moe(org_input,inpaint_mask,args)
             output_moe=convert.unpatchify(output_moe)
             d=convert.denormalization(output_moe)
             temp_psnr4, temp_ssim4, N = compute_psnr_ssim(d, samples)
@@ -346,7 +346,7 @@ def main(args):
             mask_ratio=args.mask_ratio
             org_input=convert.normalization(samples)  
             #task5
-            output_moe=moe(org_input,patch_mask,args)
+            output_moe,_=moe(org_input,patch_mask,args)
             output_moe=convert.unpatchify(output_moe)
             e=convert.denormalization(output_moe)
             temp_psnr5, temp_ssim5, N = compute_psnr_ssim(e, samples)
