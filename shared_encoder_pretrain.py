@@ -239,6 +239,8 @@ def main(args):
     print(optimizer)
     loss_scaler = NativeScaler()
 
+    start_time = time.time()
+
     if args.distributed:
         model = torch.nn.parallel.DistributedDataParallel(
             model, device_ids=[args.gpu], find_unused_parameters=True
@@ -267,7 +269,7 @@ def main(args):
                 {
                     "model_state_dict": model_trained.module.encoder.state_dict(),
                 },
-                f"{args.output_dir}/shared_encoder_{epoch+1}.pth",
+                f"{args.output_dir}/shared_encoder_{epoch + 1}.pth",
             )
 
     total_time = time.time() - start_time
