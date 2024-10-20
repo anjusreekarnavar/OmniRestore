@@ -29,6 +29,24 @@ def process_image_pair(data, device):
     return clean_img, distorted_img
 
 
+def accumualted_loss(loss_list):
+    weights = []
+
+    e = 0.0001
+    for loss in loss_list:
+        w = 1 / (loss + e)
+        weights.append(w)
+
+    acc_weights = sum(weights)
+    norm_weights = [weight / acc_weights for weight in weights]
+
+    result = [loss * weight for loss, weight in zip(loss_list, norm_weights)]
+
+    acc_loss = sum(result)
+
+    return acc_loss
+
+
 def train_one_epoch(
     model,
     data_loader_train,
@@ -102,17 +120,19 @@ def train_one_epoch(
             )
 
         loss = 0
+        loss_list = []
         for task, index in decoder_dict.items():
             task_output = output[decoder_dict[task]]
-            loss = loss + task_output[1]
-            task_loss_value = loss.item()
+            loss_list.append(task_output[1])
+            task_loss_value = task_output[1].item()
+
             if not math.isfinite(task_loss_value):
                 print("Loss is {}, stopping training".format(task_loss_value))
                 sys.exit(1)
 
-            loss = loss / accum_iter
+            # loss = loss / accum_iter
 
-        loss = loss / len(decoder_dict)
+        loss = accumualted_loss(loss_list)
         print("epoch", epoch, "training loss", loss.item())
 
         req_param = list(model.module.encoder.parameters())
