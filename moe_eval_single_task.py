@@ -4,15 +4,12 @@
 # --------------------------------------------------------
 
 
-
-
-
 import argparse
 import datetime
 import json
 import numpy as np
 import os
-#from torchvision.utils import save_image
+from torchvision.utils import save_image
 import torch.nn as nn
 from inpaint_mask_generator import generate_mask,patch_generator
 import time
@@ -23,7 +20,6 @@ from augmentations import converto_low_resolution,blur_input_image
 from pathlib import Path
 import PIL
 import torch
-from custom_dataset import TestDataset
 import torch.backends.cudnn as cudnn
 from skimage.metrics import peak_signal_noise_ratio, structural_similarity
 import torchvision.transforms as transforms
@@ -31,26 +27,29 @@ import torchvision.datasets as datasets
 from torch.utils.data import  DataLoader
 from PIL import Image, ImageFilter,ImageOps
 import timm
-from callback import EarlyStopping
+from custom_testset import TestDataset
+from bkp_files.callback import EarlyStopping
+from aggregator_moe import MOE
 from torch.utils.data import  DataLoader, random_split
 from decoder import Decoder1,Decoder2,Decoder3,Decoder4,Decoder5
-from new_decoders import Denoise_Expert,Super_Expert,Deblur_Expert,Inpaint_Expert,Demask_Expert
+
 from temporary import Conversion
 assert timm.__version__ == "0.5.4"  # version check
 from util import misc
 #from torch.utils.tensorboard import SummaryWriter
 from tensorboardX import SummaryWriter
-import model_restoration2
+import model_restoration
+from custom_testset import DataNoisy,DataBlurry,DataSuper,DataInpaint,DataMask
 from engine2 import train_one_epoch
 from multidecoders import ImageRestoration
 import timm.optim.optim_factory as optim_factory
 from util.misc import NativeScalerWithGradNormCount as NativeScaler
 from skimage.metrics import peak_signal_noise_ratio, structural_similarity
-
+from create_experts_notfreezed import create_experts_restoration
 
 def get_args_parser():
     parser = argparse.ArgumentParser('restoreMAE pre-training', add_help=False)
-    parser.add_argument('--batch_size', default=64, type=int,
+    parser.add_argument('--batch_size', default=16, type=int,
                         help='Batch size per GPU (effective batch size is batch_size * accum_iter * # gpus')
   
     parser.add_argument('--epochs', default=100, type=int)
@@ -58,7 +57,7 @@ def get_args_parser():
                         help='Accumulate gradient iterations (for increasing the effective batch size under memory constraints)')
 
     # Model parameters
-    parser.add_argument('--model', default='convmae_convvit_base_patch16', type=str, metavar='MODEL',
+    parser.add_argument('--model', default='dmae_vit_base_patch16', type=str, metavar='MODEL',
                         help='Name of model to train')
 
     parser.add_argument('--input_size', default=224, type=int,
@@ -116,14 +115,14 @@ def get_args_parser():
                         help='epochs to warmup LR')
 
     # Dataset parameters
-    parser.add_argument('--data_path', default='/scratch3/ven073/bsd300/test', type=str,
+    parser.add_argument('--data_path', default='/scratch3/ven073/newdataset', type=str,
                         help='dataset path')
     parser.add_argument('--dist_eval', action='store_true', default=False,
                         help='Enabling distributed evaluation (recommended during training for faster monitor')
 
-    parser.add_argument('--output_dir', default='/scratch3/ven073/base_output4',
+    parser.add_argument('--output_dir', default='/scratch3/ven073/base_output',
                         help='path where to save, empty for no saving')
-    parser.add_argument('--log_dir', default='/scratch3/ven073/base_output4/log_dir',
+    parser.add_argument('--log_dir', default='/scratch3/ven073/base_output/log_dir',
                         help='path where to tensorboard log')
     parser.add_argument('--device', default='cuda',
                         help='device to use for training / testing')
@@ -171,89 +170,23 @@ def compute_psnr_ssim(recoverd, clean):
     return psnr / recoverd.shape[0], ssim / recoverd.shape[0], recoverd.shape[0]
 
 
-def load_decoders(device):
-    #loading noise expert
-    denoise_expert=Decoder1()
-    #path_noise='/export/home/s5284664/dmae2/output/decoder_denoise_epoch_81.pth'
-    #denoise_expert=load_model(path_noise,denoise_expert)
-    checkpoint1 =torch.load('/home/ven073/anju/base_output5/decoder_denoise_epoch_1000.pth',map_location=torch.device('cpu') )
-    denoise_expert.load_state_dict(checkpoint1['model_state_dict'],strict=False)
-  
-    denoise_expert=denoise_expert.to(device)
-    denoise_expert.eval()
-    
-    #loading deblurring expert
-
-    deblur_expert=Decoder3()
-    #deblur_expert=load_model(path_deblur,deblur_expert)
-    checkpoint2= torch.load('/home/ven073/anju/base_output5/decoder_deblur_epoch_1000.pth',map_location=torch.device('cpu') )
-    deblur_expert.load_state_dict(checkpoint2['model_state_dict'],strict=False)
-    deblur_expert=deblur_expert.to(device)
-    deblur_expert.eval()
-    #loading superresolution expert
-   
-    superr_expert=Decoder2()
-    #superr_expert=load_model(path_super,superr_expert)
-    checkpoint3= torch.load('/home/ven073/anju/base_output5/decoder_super_epoch_1000.pth',map_location=torch.device('cpu') )
-    superr_expert.load_state_dict(checkpoint3['model_state_dict'],strict=False)
-    superr_expert=superr_expert.to(device)
-    superr_expert.eval()
-    #loading masking expert
-    masking_expert=Decoder5()
-   
-    checkpoint4= torch.load('/home/ven073/anju/base_output5/decoder_masking_epoch_1000.pth',map_location=torch.device('cpu') )
-    masking_expert.load_state_dict(checkpoint4['model_state_dict'],strict=False)
-    masking_expert=masking_expert.to(device)
-    masking_expert.eval()
-    #loading inpaint expert
-    inpaint_expert=Decoder4()
-   
-    checkpoint5= torch.load('/home/ven073/anju/base_output5/decoder_inpainting_epoch_1000.pth',map_location=torch.device('cpu') )
-    inpaint_expert.load_state_dict(checkpoint5['model_state_dict'],strict=False)
-    inpaint_expert=inpaint_expert.to(device)
-    inpaint_expert.eval()
-    return denoise_expert,superr_expert,deblur_expert,inpaint_expert,masking_expert
-
-
-def normalization(imgs,args):
-
-        # normalization
-        device=args.device
-        mean = torch.tensor([0.485, 0.456, 0.406]).reshape(1, 3, 1, 1)
-        std = torch.tensor([0.229, 0.224, 0.225]).reshape(1, 3, 1, 1)
-
-        if mean.device != imgs.device:
-            mean = mean.to(device)
-            std = std.to(device)
-        imgs = (imgs - mean) / std
-        
-        return imgs
-
-  
+ 
 def add_distortions(imgs,args):
     batch_size,_,_,_=imgs.shape
     noise = torch.randn_like(imgs) * args.sigma
     imgs_noised = imgs + noise
-    imgs_noised = transforms.Resize((224, 224), interpolation=PIL.Image.BICUBIC)(imgs_noised)
     lrimage=converto_low_resolution(imgs,args.downsampling_factor)
-    lrimage = transforms.Resize((224, 224), interpolation=PIL.Image.BICUBIC)(lrimage)
     blur_image=blur_input_image(imgs, args.radius)
-    blur_image = transforms.Resize((224, 224), interpolation=PIL.Image.BICUBIC)(blur_image)
-    #imgs_noised=normalization(imgs_noised,args)
-    #lrimage=normalization(lrimage,args)
-    #blur_image=normalization(lrimage,args)
+
     inpaint_mask=generate_mask(batch_size, args.input_size,args.percentage,args.max_vertices,args.mask_radius,args.num_lines)
     inpaint_mask=inpaint_mask.to(args.device)
     blended_image = imgs *inpaint_mask
-    blended_image = transforms.Resize((224, 224), interpolation=PIL.Image.BICUBIC)(blended_image)
-    #inpaint_mask=normalization(blended_image,args)
+
 
     patch_mask=patch_generator(imgs,args.num_patches,args.patch_size)
     patch_mask=patch_mask.to(args.device)
     final_mask=imgs*(1-patch_mask)
-    final_mask = transforms.Resize((224, 224), interpolation=PIL.Image.BICUBIC)(final_mask)
-    #final_mask=normalization(final_mask,args)
-   
+
     return imgs_noised,lrimage,blur_image,blended_image,final_mask
 class AverageMeter():
     """ Computes and stores the average and current value """
@@ -278,32 +211,42 @@ def main(args):
     print('cuda availability', torch.cuda.is_available())
     device = torch.device(args.device)
     convert=Conversion()
-#load encoder and load the pretrained weight
-    
-    
-    shared_encoder = model_restoration2.__dict__[args.model](norm_pix_loss=args.norm_pix_loss)
-    checkpoint= torch.load('/home/ven073/anju/base_output5/shared_encoder_1000.pth',map_location=torch.device('cpu') )
-    shared_encoder.load_state_dict(checkpoint['model_state_dict'],strict=False)
-    shared_encoder=shared_encoder.to(device)
-    shared_encoder.eval()
-    
-    #pretrained_path = torch.load(path)
-    denoise_expert,superr_expert,deblur_expert,inpaint_expert,masking_expert=load_decoders(device)
-    
-
+    #load encoder and load the pretrained weight
+  
     transform_test = transforms.Compose([
             transforms.RandomResizedCrop(args.input_size, scale=(0.2, 1.0), interpolation=3),  # 3 is bicubic
             transforms.RandomHorizontalFlip(),
             transforms.ToTensor(),
             # transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
             ])
-    data_path='/home/ven073/anju/imagenet'
-    dataset= TestDataset(image_folder=data_path,transform=transform_test)
 
-    print('length of dataset',len(dataset))
-    sampler_train = torch.utils.data.SequentialSampler(dataset)
-   
-    data_loader_test = DataLoader(dataset, batch_size=64, pin_memory=True, shuffle=False, num_workers=0)
+
+    experts,shared_encoder=create_experts_restoration(args)
+    #transform data
+
+    test_dir='/scratch3/ven073/test'
+    dataset_noisy=DataNoisy(test_dir)
+    dataset_super=DataSuper(test_dir)
+    dataset_blurry=DataBlurry(test_dir)
+    dataset_inpaint=DataInpaint(test_dir)
+    dataset_mask=DataMask(test_dir)
+    
+    print('length of dataset',len(dataset_noisy))
+    data_loader_noisy = DataLoader(dataset_noisy, batch_size=16, pin_memory=True, shuffle=False, num_workers=0)
+    data_loader_super = DataLoader(dataset_super, batch_size=16, pin_memory=True, shuffle=False, num_workers=0)
+    data_loader_blurry = DataLoader(dataset_blurry, batch_size=16, pin_memory=True, shuffle=False, num_workers=0)
+    data_loader_inpaint = DataLoader(dataset_inpaint, batch_size=16, pin_memory=True, shuffle=False, num_workers=0)
+    data_loader_mask = DataLoader(dataset_mask, batch_size=16, pin_memory=True, shuffle=False, num_workers=0)#load MOE model
+
+    #load MOE model
+    moe=MOE(experts,shared_encoder,args)
+    
+    #load weight of MOE moe_output2 for freezed and moe_output for not feezed
+    checkpoint2= torch.load('/scratch3/ven073/moe_output2ddp/aggregator1_moe_model1000.pth',map_location=torch.device('cpu') )
+    moe.load_state_dict(checkpoint2['model_state_dict'],strict=False)
+    moe=moe.to(device)
+    moe.eval()
+    
 #creating objects for evaluating psnr and ssim
     psnr_exp1 = AverageMeter()
     ssim_exp1 = AverageMeter()
@@ -317,55 +260,99 @@ def main(args):
     ssim_exp5 = AverageMeter()
 
     with torch.no_grad():   
-         for samples in data_loader_test:
+        for ii, data_val in enumerate((data_loader_noisy), 0): 
+            samples = data_val[0]
+            imgs_noised = data_val[1]
             samples = samples.to(device, non_blocking=True)
-            samples = transforms.Resize((224, 224), interpolation=PIL.Image.BICUBIC)(samples)
-            imgs_noised,lrimage,blur_image,inpaint_mask,patch_mask=add_distortions(samples,args)
+            imgs_noised = imgs_noised.to(device, non_blocking=True)
+            #imgs_noised,_,_,_,_=add_distortions(samples,args)
             mask_ratio=args.mask_ratio
-            latent,mask,ids_restore=shared_encoder(imgs_noised,mask_ratio)
-            prediction_denoise=denoise_expert(samples,latent,ids_restore,mask)
-            denoised_image=convert.unpatchify(prediction_denoise[0])
-            a=convert.denormalization(denoised_image)
+            org_input=convert.normalization(samples)
+            #task1
+            output_moe,_=moe(org_input,imgs_noised,args)
+            output_moe=convert.unpatchify(output_moe)
+            a=convert.denormalization(output_moe)
             temp_psnr1, temp_ssim1, N = compute_psnr_ssim(a, samples)
             psnr_exp1.update(temp_psnr1, N)
             ssim_exp1.update(temp_ssim1, N)
-            latent,mask,ids_restore=shared_encoder(lrimage,mask_ratio)
-            prediction_superresolve=superr_expert(samples,latent,ids_restore,mask)
-            super_output=convert.unpatchify(prediction_superresolve[0])
-            b=convert.denormalization(super_output)
+    print("PSNR moe denoise : %.2f, SSIM moe denoise: %.4f" % (psnr_exp1.avg, ssim_exp1.avg))
+    with torch.no_grad():   
+        for ii, data_val in enumerate((data_loader_super), 0): 
+            samples = data_val[0]
+            lrimage = data_val[1]
+            samples = samples.to(device, non_blocking=True)
+            lrimage = lrimage.to(device, non_blocking=True)
+            
+            #_,lrimage,_,_,_=add_distortions(samples,args)
+            mask_ratio=args.mask_ratio
+            org_input=convert.normalization(samples)        
+            #task2
+
+            output_moe,_=moe(org_input,lrimage,args)
+            output_moe=convert.unpatchify(output_moe)
+            b=convert.denormalization(output_moe)
             temp_psnr2, temp_ssim2, N = compute_psnr_ssim(b, samples)
             psnr_exp2.update(temp_psnr2, N)
             ssim_exp2.update(temp_ssim2, N)
-            latent,mask,ids_restore=shared_encoder(blur_image,mask_ratio)
-            prediction_deblur=deblur_expert(samples,latent,ids_restore,mask) 
-            blur_output=convert.unpatchify(prediction_deblur[0])
-            c=convert.denormalization(blur_output)
+    print("PSNR moe superresolution : %.2f, SSIM moe superresolution: %.4f" % (psnr_exp2.avg, ssim_exp2.avg))
+    with torch.no_grad():   
+        for ii, data_val in enumerate((data_loader_blurry), 0): 
+
+            samples = data_val[0]
+            blur_image= data_val[1]
+            samples = samples.to(device, non_blocking=True)
+            blur_image = blur_image.to(device, non_blocking=True)
+            
+            #_,_,blur_image,_,_=add_distortions(samples,args)
+            mask_ratio=args.mask_ratio
+            org_input=convert.normalization(samples)     
+            #task3
+            output_moe,_=moe(org_input,blur_image,args)
+            output_moe=convert.unpatchify(output_moe)
+            c=convert.denormalization(output_moe)
             temp_psnr3, temp_ssim3, N = compute_psnr_ssim(c, samples)
             psnr_exp3.update(temp_psnr3, N)
             ssim_exp3.update(temp_ssim3, N)
-         
-            latent,mask,ids_restore=shared_encoder(inpaint_mask,mask_ratio)
-            prediction_inpaint=inpaint_expert(samples,latent,ids_restore,mask)
-            inpaint_output=convert.unpatchify(prediction_inpaint[0])
+        
+    print("PSNR moe deblurring : %.2f, SSIM moe deblurring : %.4f" % (psnr_exp3.avg, ssim_exp3.avg))
+    with torch.no_grad():   
+        for ii, data_val in enumerate((data_loader_inpaint), 0):
+            samples = data_val[0]
+            inpaint_mask = data_val[1]
+            samples = samples.to(device, non_blocking=True)
+            inpaint_mask = inpaint_mask.to(device, non_blocking=True)
             
-            d=convert.denormalization(inpaint_output)
+            #_,_,_,inpaint_mask,_=add_distortions(samples,args)
+            mask_ratio=args.mask_ratio
+            org_input=convert.normalization(samples)  
+            
+            #task4
+         
+            output_moe,_=moe(org_input,inpaint_mask,args)
+            output_moe=convert.unpatchify(output_moe)
+            d=convert.denormalization(output_moe)
             temp_psnr4, temp_ssim4, N = compute_psnr_ssim(d, samples)
             psnr_exp4.update(temp_psnr4, N)
             ssim_exp4.update(temp_ssim4, N)
-        
-            latent,mask,ids_restore=shared_encoder(patch_mask,mask_ratio)
-            prediction_demask=masking_expert(samples,latent,ids_restore,mask) 
-            mask_output=convert.unpatchify(prediction_demask[0])
+    print("PSNR moe inpainting: %.2f, SSIM moe inpainting: %.4f" % (psnr_exp4.avg, ssim_exp4.avg))
+    with torch.no_grad():   
+        for ii, data_val in enumerate((data_loader_mask), 0): 
+            samples = data_val[0]
+            patch_mask = data_val[1]
+            samples = samples.to(device, non_blocking=True)
+            patch_mask = patch_mask.to(device, non_blocking=True)
             
-            e=convert.denormalization(mask_output)
+            #_,_,_,_,patch_mask=add_distortions(samples,args)
+            mask_ratio=args.mask_ratio
+            org_input=convert.normalization(samples)  
+            #task5
+            output_moe,_=moe(org_input,patch_mask,args)
+            output_moe=convert.unpatchify(output_moe)
+            e=convert.denormalization(output_moe)
             temp_psnr5, temp_ssim5, N = compute_psnr_ssim(e, samples)
             psnr_exp5.update(temp_psnr5, N)
             ssim_exp5.update(temp_ssim5, N)
-    print("PSNR expert1 denoise : %.2f, SSIM expert1 denoise: %.4f" % (psnr_exp1.avg, ssim_exp1.avg))
-    print("PSNR expert2 superresolution : %.2f, SSIM expert2 superresolution: %.4f" % (psnr_exp2.avg, ssim_exp2.avg))
-    print("PSNR expert3 deblurring : %.2f, SSIM expert3 deblurring : %.4f" % (psnr_exp3.avg, ssim_exp3.avg))
-    print("PSNR expert4 inpainting: %.2f, SSIM expert4 inpainting: %.4f" % (psnr_exp4.avg, ssim_exp4.avg))
-    print("PSNR expert5 demasking: %.2f, SSIM expert5 demasking: %.4f" % (psnr_exp5.avg, ssim_exp5.avg))
+    print("PSNR moe demasking: %.2f, SSIM moe demasking: %.4f" % (psnr_exp5.avg, ssim_exp5.avg))
 
 if __name__ == '__main__':
     args = get_args_parser()

@@ -1,8 +1,8 @@
 
-/*
- * Copyright (c) 2024 ---Anjusree Karnavar,Griffith University
- */
-
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+#Anjusree Karnavar Griffith University 2024
+#anjusree.karnavar@griffithuni.edu.au
+# --------------------------------------------------------
 
 import argparse
 import datetime
@@ -30,7 +30,7 @@ import torchvision.datasets as datasets
 from torch.utils.data import  DataLoader
 from PIL import Image, ImageFilter,ImageOps
 import timm
-from callback import EarlyStopping
+from bkp_files.callback import EarlyStopping
 from torch.utils.data import  DataLoader, random_split
 from decoder import Decoder1,Decoder2,Decoder3,Decoder4,Decoder5
 

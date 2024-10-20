@@ -1,6 +1,7 @@
-/*
- * Copyright (c) 2024 ---Anjusree Karnavar,Griffith University
- */
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+#Anjusree Karnavar Griffith University 2024
+#anjusree.karnavar@griffithuni.edu.au
+# --------------------------------------------------------
 
 import datetime
 import json
@@ -16,7 +17,7 @@ from pathlib import Path
 import PIL
 import torch
 import torch.backends.cudnn as cudnn
-from aggregator import DepthCNN
+from aggregator_copy import DepthCNN
 import torchvision.transforms as transforms
 import torchvision.datasets as datasets
 from torch.utils.data import  DataLoader

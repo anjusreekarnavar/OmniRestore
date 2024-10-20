@@ -52,6 +52,7 @@ class DataLoaderTrain(Dataset):
             noisy = self.transform(noisy_tensor)
         
         return clean, noisy, clean_filename, noisy_filename
+    
 
 class DataLoaderVal(Dataset):
     def __init__(self, rgb_dir):
@@ -76,17 +77,19 @@ class DataLoaderVal(Dataset):
         return self.tar_size
 
     def __getitem__(self, index):
-        tar_index   = index % self.tar_size
-        
+        tar_index = index % self.tar_size
 
-        clean = torch.from_numpy(np.float32(load_img(self.clean_filenames[tar_index])))
-        noisy = torch.from_numpy(np.float32(load_img(self.noisy_filenames[tar_index])))
-      
         clean_filename = os.path.split(self.clean_filenames[tar_index])[-1]
         noisy_filename = os.path.split(self.noisy_filenames[tar_index])[-1]
 
-        clean = clean.permute(2,0,1)
-        noisy = noisy.permute(2,0,1)
-    
-        return clean, noisy, clean_filename, noisy_filename
+        clean_img = load_img(self.clean_filenames[tar_index])
+        noisy_img = load_img(self.noisy_filenames[tar_index])
+
+        # Convert to float tensors
+        clean_tensor = torch.from_numpy(np.float32(clean_img)).permute(2, 0, 1) 
+        noisy_tensor = torch.from_numpy(np.float32(noisy_img)).permute(2, 0, 1)
+
+        
+        return clean_tensor, noisy_tensor, clean_filename, noisy_filename
+
 

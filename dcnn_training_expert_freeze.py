@@ -1,6 +1,7 @@
-/*
- * Copyright (c) 2024 ---Anjusree Karnavar,Griffith University
- */
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+#Anjusree Karnavar Griffith University 2024
+#anjusree.karnavar@griffithuni.edu.au
+# --------------------------------------------------------
 
 import torch
 import torch.nn as nn
@@ -20,7 +21,7 @@ from torchvision import models
 import torch.nn.functional as F
 from distorted_dataset import new_distorted_dataset
 from create_input import create_input_dcnn
-from calculate_psnr_ssim import batch_PSNR
+from bkp_files.calculate_psnr_ssim import batch_PSNR
 
 
 def loss_function(pred,inputs,args):
@@ -163,7 +164,7 @@ def aggregator2_validation(experts,depth_cnn_model,encoder,data_loader_val,epoch
                     'epoch': epoch, 
                     'model_state_dict': depth_cnn_model.module.state_dict()
                             
-                    }, f'/scratch3/ven073/dcnn_outputddp/aggregator1_dcnn_best.pth')
+                    }, f'/scratch3/ven073/dcnn_output2ddp/aggregator1_dcnn_best.pth')
         print("[Ep %d\t PSNR dcnn: %.4f\t] ----  [best_Ep_dcnn  %d Best_PSNR_dcnn %.4f] " % (epoch, psnr_val_rgb,best_epoch,best_psnr))
         
         return total_loss/len(data_loader_val),depth_cnn_model,best_psnr
