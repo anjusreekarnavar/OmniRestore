@@ -35,7 +35,7 @@ def train_one_epoch(
     data_loader_val,
     tasks,
     device,
-    optimizer,
+    optimizer_dict,
     loss_scaler,
     epoch,
     log_writer,
@@ -45,7 +45,8 @@ def train_one_epoch(
 
     accum_iter = args.accum_iter
 
-    optimizer.zero_grad()
+    for task, optimizer in optimizer_dict.items():
+        optimizer.zero_grad()
 
     convert = Conversion()
 
@@ -79,7 +80,10 @@ def train_one_epoch(
 
         if data_iter_step % accum_iter == 0:
             lr_sched.adjust_learning_rate(
-                optimizer, data_iter_step / len(data_loader_train) + epoch, args
+                optimizer_dict[task],
+                data_iter_step / len(data_loader_train) + epoch,
+                task,
+                args,
             )
 
         with torch.cuda.amp.autocast():
@@ -111,7 +115,10 @@ def train_one_epoch(
         loss = loss / len(decoder_dict)
         print("epoch", epoch, "training loss", loss.item())
 
-        req_param = list(model.module.parameters())
+        req_param = list(model.module.encoder.parameters())
+        for task, optimizer in optimizer_dict.items():
+            req_param = req_param + list(model.module.decoder_dict[task].parameters())
+
         loss_scaler(
             loss,
             optimizer,
@@ -119,8 +126,9 @@ def train_one_epoch(
             update_grad=(data_iter_step + 1) % accum_iter == 0,
         )
 
-        if (data_iter_step + 1) % accum_iter == 0:
-            optimizer.zero_grad()
+        for task, optimizer in optimizer_dict.items():
+            if (data_iter_step + 1) % accum_iter == 0:
+                optimizer.zero_grad()
 
         reduce_distortion = misc.all_reduce_mean(task_loss_value)
 
@@ -162,9 +170,10 @@ def train_one_epoch(
             clean_img_mask, distorted_mask = process_image_pair(data_val_mask, device)
 
             if data_iter_step % accum_iter == 0:
-                lr_sched.adjust_learning_rate(
-                    optimizer, data_iter_step / len(data_loader_train) + epoch, args
-                )
+                for task, optimizer in optimizer_dict.items():
+                    lr_sched.adjust_learning_rate(
+                        optimizer, data_iter_step / len(data_loader_train) + epoch, args
+                    )
 
             with torch.cuda.amp.autocast():
                 output, _ = model(

@@ -11,6 +11,7 @@ import sys
 from metrics_eval import Conversion
 from pathlib import Path
 import PIL
+from create_optimizer_list import create_optimizer
 import torch
 import torch.backends.cudnn as cudnn
 import torchvision.transforms as transforms
@@ -25,7 +26,8 @@ from decoder import Decoder
 from util import misc
 import yaml
 import model_restoration
-#import options as option
+
+# import options as option
 from tensorboardX import SummaryWriter
 from shared_encoder_engine import train_one_epoch
 import timm.optim.optim_factory as optim_factory
@@ -81,9 +83,51 @@ def get_args_parser():
         help="learning rate (absolute lr)",
     )
     parser.add_argument(
+        "--noiselr",
+        type=float,
+        default=None,
+        metavar="LR",
+        help="learning rate (absolute lr)",
+    )
+    parser.add_argument(
+        "--blurlr",
+        type=float,
+        default=None,
+        metavar="LR",
+        help="learning rate (absolute lr)",
+    )
+    parser.add_argument(
+        "--superlr",
+        type=float,
+        default=None,
+        metavar="LR",
+        help="learning rate (absolute lr)",
+    )
+    parser.add_argument(
+        "--inpaintlr",
+        type=float,
+        default=None,
+        metavar="LR",
+        help="learning rate (absolute lr)",
+    )
+    parser.add_argument(
+        "--masklr",
+        type=float,
+        default=None,
+        metavar="LR",
+        help="learning rate (absolute lr)",
+    )
+    parser.add_argument(
         "--blr",
         type=float,
         default=1e-3,
+        metavar="LR",
+        help="base learning rate: absolute_lr = base_lr * total_batch_size / 256",
+    )
+    parser.add_argument(
+        "--mlr",
+        type=float,
+        default=1.5e-3,
         metavar="LR",
         help="base learning rate: absolute_lr = base_lr * total_batch_size / 256",
     )
@@ -194,7 +238,9 @@ def main(args):
 
     cudnn.benchmark = True
 
-    with open("/home/joseph/multi_distortion-based_image_restoration/config.yaml", "r") as file:
+    with open(
+        "/home/joseph/multi_distortion-based_image_restoration/config.yaml", "r"
+    ) as file:
         config = yaml.safe_load(file)
 
     data_loader_train = create_dataset_train(config, args)
@@ -231,12 +277,7 @@ def main(args):
     tasks = ["denoising", "deblurring", "super_resolution", "inpainting", "demasking"]
     eff_batch_size = args.batch_size * args.accum_iter * misc.get_world_size()
 
-    if args.lr is None:  # only base_lr is specified
-        args.lr = args.blr * eff_batch_size / 256
-
-    param_groups = optim_factory.add_weight_decay(model, args.weight_decay)
-    optimizer = torch.optim.AdamW(param_groups, lr=args.lr, betas=(0.9, 0.95))
-    print(optimizer)
+    optimizer_dict = create_optimizer(args, model, eff_batch_size)
     loss_scaler = NativeScaler()
 
     start_time = time.time()
@@ -256,7 +297,7 @@ def main(args):
             data_loader_val,
             tasks,
             device,
-            optimizer,
+            optimizer_dict,
             loss_scaler,
             epoch,
             log_writer,
