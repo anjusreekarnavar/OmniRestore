@@ -2,10 +2,6 @@
 #Anjusree Karnavar Griffith University 2024
 #anjusree.karnavar@griffithuni.edu.au
 # --------------------------------------------------------
-
-
-
-
 import torch
 import torch.nn as nn
 import numpy as np
@@ -24,7 +20,7 @@ from torchvision import models
 import torch.nn.functional as F
 import util.lr_sched as lr_sched
 from distorted_dataset import new_distorted_dataset
-from calculate_psnr_ssim import batch_PSNR
+from bkp_files.calculate_psnr_ssim import batch_PSNR
 
 def normalization(imgs,args):
 

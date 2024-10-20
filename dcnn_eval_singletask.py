@@ -8,7 +8,7 @@ import torch.nn as nn
 from inpaint_mask_generator import generate_mask,patch_generator
 import time
 import sys
-from aggregator import DepthCNN
+from aggregator_copy import DepthCNN
 from metrics_eval import AverageMeter,Conversion
 from metrics_eval import compute_psnr_ssim
 from augmentations import converto_low_resolution,blur_input_image
@@ -22,11 +22,10 @@ import torchvision.datasets as datasets
 from torch.utils.data import  DataLoader
 from PIL import Image, ImageFilter,ImageOps
 import timm
-from callback import EarlyStopping
-from custom_testset import TestDataset
+from bkp_files.callback import EarlyStopping
 from torch.utils.data import  DataLoader, random_split
 from decoder import Decoder1,Decoder2,Decoder3,Decoder4,Decoder5
-from new_decoders import Denoise_Expert,Super_Expert,Deblur_Expert,Inpaint_Expert,Demask_Expert
+from custom_testset import DataNoisy,DataBlurry,DataSuper,DataInpaint,DataMask
 from temporary import Conversion
 assert timm.__version__ == "0.5.4"  # version check
 from util import misc
@@ -38,7 +37,7 @@ from multidecoders import ImageRestoration
 import timm.optim.optim_factory as optim_factory
 from util.misc import NativeScalerWithGradNormCount as NativeScaler
 from skimage.metrics import peak_signal_noise_ratio, structural_similarity
-from create_experts2 import create_experts_restoration
+from create_experts_notfreezed import create_experts_restoration
 from distorted_dataset import new_distorted_dataset
 from create_input import create_input_dcnn
 
@@ -217,24 +216,39 @@ def main(args):
             # transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
             ])
     test_dir='/scratch3/ven073/test'
-    dataset_test=TestDataset(test_dir)
+    dataset_noisy=DataNoisy(test_dir)
+    dataset_super=DataSuper(test_dir)
+    dataset_blurry=DataBlurry(test_dir)
+    dataset_inpaint=DataInpaint(test_dir)
+    dataset_mask=DataMask(test_dir)
     
-    print('length of dataset',len(dataset_test))
-    data_loader_test = DataLoader(dataset_test, batch_size=3, pin_memory=True, shuffle=False, num_workers=0)
+    print('length of dataset',len(dataset_noisy))
+    data_loader_noisy = DataLoader(dataset_noisy, batch_size=16, pin_memory=True, shuffle=False, num_workers=0)
+    data_loader_super = DataLoader(dataset_super, batch_size=16, pin_memory=True, shuffle=False, num_workers=0)
+    data_loader_blurry = DataLoader(dataset_blurry, batch_size=16, pin_memory=True, shuffle=False, num_workers=0)
+    data_loader_inpaint = DataLoader(dataset_inpaint, batch_size=16, pin_memory=True, shuffle=False, num_workers=0)
+    data_loader_mask = DataLoader(dataset_mask, batch_size=16, pin_memory=True, shuffle=False, num_workers=0)
+
     #load MOE model
     depth_cnn=DepthCNN()
     
     #load weight of DCNN dcnn_output for freezed and dcnn_output2 for unfreezed
-    checkpoint2= torch.load('/scratch3/ven073/dcnn_outputddp/aggregator2_dcnn_epoch_401.pth',map_location=torch.device('cpu') )#not freezed
-    #checkpoint2= torch.load('/scratch3/ven073/dcnn_outputddp/aggregator2_dcnn_epoch_501.pth',map_location=torch.device('cpu') )
+    checkpoint2= torch.load('/scratch3/ven073/dcnn_output2ddp/aggregator2_dcnn_epoch_401.pth',map_location=torch.device('cpu') )
     depth_cnn.load_state_dict(checkpoint2['model_state_dict'],strict=False)
     depth_cnn=depth_cnn.to(device)
     depth_cnn.eval()
     
 #creating objects for evaluating psnr and ssim
-    psnr_exp = AverageMeter()
-    ssim_exp = AverageMeter()
-   
+    psnr_exp1 = AverageMeter()
+    ssim_exp1 = AverageMeter()
+    psnr_exp2 = AverageMeter()
+    ssim_exp2 = AverageMeter()
+    psnr_exp3 = AverageMeter()
+    ssim_exp3 = AverageMeter()
+    psnr_exp4 = AverageMeter()
+    ssim_exp4 = AverageMeter()
+    psnr_exp5 = AverageMeter()
+    ssim_exp5 = AverageMeter()
     mean = [0.485, 0.456, 0.406]
     std = [0.229, 0.224, 0.225]
     std=torch.tensor(std)
@@ -242,24 +256,102 @@ def main(args):
     mean=mean.to(args.device)
     std=std.to(args.device)
 
-    with torch.no_grad():
-        for ii, data_val in enumerate((data_loader_test), 0):
+    with torch.no_grad():  
+        for ii, data_val in enumerate((data_loader_noisy), 0): 
+         
             samples = data_val[0]
-            distorted = data_val[1]
+            imgs_noised = data_val[1]
             samples = samples.to(device, non_blocking=True)
-            imgs_distorted=distorted.to(device, non_blocking=True)
+            imgs_noised = imgs_noised.to(device, non_blocking=True)
+            #imgs_noised,_,_,_,_=add_distortions(samples,args)
             mask_ratio=args.mask_ratio
             #org_input=convert.normalization(samples)
             #task1
-            input_image=create_input_dcnn(experts,shared_encoder,samples,imgs_distorted,args.device,args)
+            input_image=create_input_dcnn(experts,shared_encoder,samples,imgs_noised,args.device,args)
             depth_cnn_output=depth_cnn(input_image)
             output_images = depth_cnn_output * std.view(1, 3, 1, 1) + mean.view(1, 3, 1, 1)
             output_images = torch.clamp(output_images, 0, 1)
-            temp_psnr, temp_ssim, N = compute_psnr_ssim(output_images, samples)
-            psnr_exp.update(temp_psnr, N)
-            ssim_exp.update(temp_ssim, N)
-    print("PSNR DCNN  : %.2f, SSIM DCNN : %.4f" % (psnr_exp.avg, ssim_exp.avg))
+            temp_psnr1, temp_ssim1, N = compute_psnr_ssim(output_images, samples)
+            psnr_exp1.update(temp_psnr1, N)
+            ssim_exp1.update(temp_ssim1, N)
+    print("PSNR DCNN denoise : %.2f, SSIM DCNN denoise: %.4f" % (psnr_exp1.avg, ssim_exp1.avg))
     
+    with torch.no_grad():   
+         
+        for ii, data_val in enumerate((data_loader_super), 0): 
+            #task2
+            samples = data_val[0]
+            lrimage = data_val[1]
+            samples = samples.to(device, non_blocking=True)
+            lrimage = lrimage.to(device, non_blocking=True)
+            #_,lrimage,_,_,_=add_distortions(samples,args)
+            mask_ratio=args.mask_ratio
+
+            input_image=create_input_dcnn(experts,shared_encoder,samples,lrimage,args.device,args)
+            depth_cnn_output=depth_cnn(input_image)
+            output_images = depth_cnn_output * std.view(1, 3, 1, 1) + mean.view(1, 3, 1, 1)
+            output_images = torch.clamp(output_images, 0, 1)
+            temp_psnr2, temp_ssim2, N = compute_psnr_ssim(output_images, samples)
+            psnr_exp2.update(temp_psnr2, N)
+            ssim_exp2.update(temp_ssim2, N)
+    
+    print("PSNR DCNN superresolution : %.2f, SSIM DCNN superresolution: %.4f" % (psnr_exp2.avg, ssim_exp2.avg))
+    with torch.no_grad():   
+         
+        for ii, data_val in enumerate((data_loader_blurry), 0): 
+
+            #task3
+            samples = data_val[0]
+            blur_image= data_val[1]
+            samples = samples.to(device, non_blocking=True)
+            blur_image = blur_image.to(device, non_blocking=True)
+            #_,_,blur_image,_,_=add_distortions(samples,args)
+            mask_ratio=args.mask_ratio
+            input_image=create_input_dcnn(experts,shared_encoder,samples,blur_image,args.device,args)
+            depth_cnn_output=depth_cnn(input_image)
+            output_images = depth_cnn_output * std.view(1, 3, 1, 1) + mean.view(1, 3, 1, 1)
+            output_images = torch.clamp(output_images, 0, 1)
+            temp_psnr3, temp_ssim3, N = compute_psnr_ssim(output_images, samples)
+            psnr_exp3.update(temp_psnr3, N)
+            ssim_exp3.update(temp_ssim3, N)
+    print("PSNR DCNN deblurring : %.2f, DCNN deblurring : %.4f" % (psnr_exp3.avg, ssim_exp3.avg))
+
+    with torch.no_grad():  
+         
+        for ii, data_val in enumerate((data_loader_inpaint), 0): 
+            samples = data_val[0]
+            inpaint_mask = data_val[1]
+            samples = samples.to(device, non_blocking=True)
+            inpaint_mask = inpaint_mask.to(device, non_blocking=True)
+            #_,_,_,inpaint_mask,_=add_distortions(samples,args)
+            mask_ratio=args.mask_ratio
+            #task4
+            input_image=create_input_dcnn(experts,shared_encoder,samples,inpaint_mask,args.device,args)
+            depth_cnn_output=depth_cnn(input_image)
+            output_images = depth_cnn_output * std.view(1, 3, 1, 1) + mean.view(1, 3, 1, 1)
+            output_images = torch.clamp(output_images, 0, 1)
+            temp_psnr4, temp_ssim4, N = compute_psnr_ssim(output_images, samples)
+            psnr_exp4.update(temp_psnr4, N)
+            ssim_exp4.update(temp_ssim4, N)
+    print("PSNR DCNN inpainting: %.2f, SSIM DCNN inpainting: %.4f" % (psnr_exp4.avg, ssim_exp4.avg))
+    with torch.no_grad():  
+        
+        for ii, data_val in enumerate((data_loader_mask), 0): 
+            samples = data_val[0]
+            patch_mask = data_val[1]
+            samples = samples.to(device, non_blocking=True)
+            patch_mask = patch_mask.to(device, non_blocking=True)
+            #_,_,_,_,patch_mask=add_distortions(samples,args)
+            mask_ratio=args.mask_ratio
+            #task5
+            input_image=create_input_dcnn(experts,shared_encoder,samples,patch_mask,args.device,args)
+            depth_cnn_output=depth_cnn(input_image)
+            output_images = depth_cnn_output * std.view(1, 3, 1, 1) + mean.view(1, 3, 1, 1)
+            output_images = torch.clamp(output_images, 0, 1)
+            temp_psnr5, temp_ssim5, N = compute_psnr_ssim(output_images, samples)
+            psnr_exp5.update(temp_psnr5, N)
+            ssim_exp5.update(temp_ssim5, N)
+    print("PSNR DCNN demasking: %.2f, SSIM DCNN demasking: %.4f" % (psnr_exp5.avg, ssim_exp5.avg))
 
 if __name__ == '__main__':
     args = get_args_parser()
