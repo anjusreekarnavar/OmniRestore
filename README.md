@@ -13,7 +13,7 @@ python -m torch.distributed.launch moe_trainddp.py
 
 ## Code Structure
 
-DeepLearningProject/
+OmniRestore/
 │
 ├── datasets/                # Datasets for training and testing
 │   ├── raw/                 # Raw datasets (unprocessed)

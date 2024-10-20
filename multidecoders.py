@@ -24,38 +24,38 @@ class MultiImageRestoration(nn.Module):
 
         # Initialize DecoderTask3, DecoderTask4, and DecoderTask5 similarly
 
-    def forward(self, imgs, inputs, mask_ratio, tasks):
+    def forward(
+        self,
+        clean_img_noise,
+        distorted_noise,
+        clean_img_blur,
+        distorted_blur,
+        clean_img_super,
+        distorted_super,
+        clean_img_inpaint,
+        distorted_inpaint,
+        clean_img_mask,
+        distorted_mask,
+        mask_ratio,
+    ):
+
         encoder_output = []
         decoder_pred = []
-        latent, mask, ids_restore = self.encoder(inputs, mask_ratio)
 
-        # The list decoder_pred[] should be appended in the order
-        # [denoising, deblurring, super_resolution, inpainting, demasking]
-        # noise_pred = self.noise_decoder(imgs, latent, ids_restore, mask)
-        # decoder_pred.append(noise_pred)
-        # blur_pred = self.blur_decoder(imgs, latent, ids_restore, mask)
-        # decoder_pred.append(blur_pred)
-        # super_pred = self.super_decoder(imgs, latent, ids_restore, mask)
-        # decoder_pred.append(super_pred)
-        # inpaint = self.inpaint_decoder(imgs, latent, ids_restore, mask)
-        # decoder_pred.append(inpaint)
-        # mask = self.mask_decoder(imgs, latent, ids_restore, mask)
-        # decoder_pred.append(mask)
+        # Define a list of (distorted, clean, decoder) tuples
+        tasks = [
+            (distorted_noise, clean_img_noise, self.noise_decoder),
+            (distorted_blur, clean_img_blur, self.blur_decoder),
+            (distorted_super, clean_img_super, self.super_decoder),
+            (distorted_inpaint, clean_img_inpaint, self.inpaint_decoder),
+            (distorted_mask, clean_img_mask, self.mask_decoder),
+        ]
 
-        # The list tasks[] contains the name of all tasks to do
-        for task in tasks:
-            # check if the tasks is already defined in the dict of decoders in this class
-            if task in self.decoder_dict:
-                current_decoder = self.decoder_dict[task]
-                # call the decoder
-                pred = current_decoder(imgs, latent, ids_restore, mask)
-                # append the result to the list of predictions
-                # the order of predictions in the list decoder_pred[] will be the same as the
-                # order of tasks in the list tasks[]
-                decoder_pred.append(pred)
-
-        encoder_output.append(latent)
-        encoder_output.append(mask)
-        encoder_output.append(ids_restore)
+        # Loop over the tasks and apply the encoder and decoder
+        for distorted, clean, decoder in tasks:
+            latent, mask, ids_restore = self.encoder(distorted, mask_ratio)
+            encoder_output.append([latent, mask, ids_restore])
+            pred = decoder(clean, latent, ids_restore, mask)
+            decoder_pred.append(pred)
 
         return decoder_pred, encoder_output
