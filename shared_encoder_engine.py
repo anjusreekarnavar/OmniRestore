@@ -169,12 +169,6 @@ def train_one_epoch(
             )
             clean_img_mask, distorted_mask = process_image_pair(data_val_mask, device)
 
-            if data_iter_step % accum_iter == 0:
-                for task, optimizer in optimizer_dict.items():
-                    lr_sched.adjust_learning_rate(
-                        optimizer, data_iter_step / len(data_loader_train) + epoch, args
-                    )
-
             with torch.cuda.amp.autocast():
                 output, _ = model(
                     clean_img_noise,
