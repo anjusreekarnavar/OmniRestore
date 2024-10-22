@@ -300,9 +300,14 @@ def main(args):
             model, device_ids=[args.gpu], find_unused_parameters=True
         )
 
+    mask_ratio = args.mask_ratio
+    mask_ratio_inc = 0.2
     for epoch in range(args.start_epoch, args.epochs):
         if args.distributed:
             data_loader_train.sampler.set_epoch(epoch)
+
+        if epoch % 100 == 0:
+            mask_ratio = mask_ratio + mask_ratio_inc
 
         model_trained = train_one_epoch(
             model,
@@ -313,6 +318,7 @@ def main(args):
             loss_scaler,
             epoch,
             log_writer,
+            mask_ratio,
             args,
         )
 

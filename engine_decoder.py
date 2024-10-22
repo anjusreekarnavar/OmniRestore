@@ -25,10 +25,10 @@ def train_one_epoch(
     loss_scaler,
     epoch,
     log_writer,
+    mask_ratio,
     args,
 ):
-    mask_ratio_inc = 0.2
-    mask_ratio = args.mask_ratio * (mask_ratio_inc * epoch)
+    # mask_ratio = args.mask_ratio
 
     accum_iter = args.accum_iter
 
