@@ -29,15 +29,13 @@ def wait_for_memory(required_memory, device="cuda", check_interval=1.0):
         free_memory = get_free_memory(device)
 
         if free_memory >= required_memory:
-            print(f"Enough memory available: {free_memory / (1024**3):.2f} GB")
+            # print(f"Enough memory available: {free_memory / (1024**3):.2f} GB")
             break
         else:
-            print(
-                f"Not enough memory yet: {free_memory / (1024**3):.2f} GB. Waiting..."
-            )
-            time.sleep(
-                check_interval
-            )  # Wait for the specified interval before checking again
+            # print(
+            #    f"Not enough memory yet: {free_memory / (1024**3):.2f} GB. Waiting..."
+            # )
+            time.sleep(check_interval)
 
 
 def train_one_epoch(
