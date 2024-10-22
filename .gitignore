@@ -11,4 +11,11 @@ __pycache__/
 
 # Ignore compiled Python files
 *.pyc
+bkp_files/*.pyc
+config/*.pyc
+data/*.pyc
+dmae_files/*.pyc
+model_architecture/*.pyc
+test/*.pyc
+util/*.pyc
 
