@@ -8,6 +8,12 @@ output_dir/
 .vscode/
 
 __pycache__/
+config/__pycache__/
+data/__pycache__/
+dmae_files/__pycache__/
+model_architecture/__pycache__/
+test/__pycache__/
+util/__pycache__/
 
 # Ignore compiled Python files
 *.pyc
