@@ -234,7 +234,6 @@ def main(args):
         config = yaml.safe_load(file)
 
     data_loader_train = create_dataset_train(config, args)
-
     data_loader_val = create_dataset_val(config, args)
 
     log_writer = SummaryWriter(log_dir=args.log_dir)
@@ -281,6 +280,7 @@ def main(args):
         if args.distributed:
             for _, data_loader_train_ in data_loader_train.items():
                 data_loader_train_.sampler.set_epoch(epoch)
+
         model_trained = train_one_epoch(
             model,
             data_loader_train,
@@ -295,7 +295,6 @@ def main(args):
         )
 
         if args.output_dir and (epoch % 100 == 0 or epoch + 1 == args.epochs):
-
             torch.save(
                 {
                     "model_state_dict": model_trained.module.encoder.state_dict(),
