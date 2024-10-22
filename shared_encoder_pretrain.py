@@ -23,12 +23,12 @@ assert timm.__version__ == "0.5.4"  # version check
 from model_architecture.decoder import Decoder
 from util import misc
 import yaml
-from model_architecturearchitecture.model_architecture import model_restoration_encoder
+from model_architecture import model_restoration_encoder
 from tensorboardX import SummaryWriter
 from shared_encoder_engine import train_one_epoch
 import timm.optim.optim_factory as optim_factory
 from util.misc import NativeScalerWithGradNormCount as NativeScaler
-from model_architecture.model_architecture.multidecoders import MultiImageRestoration
+from model_architecture.multidecoders import MultiImageRestoration
 
 
 def get_args_parser():
@@ -36,7 +36,7 @@ def get_args_parser():
 
     parser.add_argument(
         "--batch_size",
-        default=3,
+        default=32,
         type=int,
         help="Batch size per GPU (effective batch size is batch_size * accum_iter * # gpus",
     )
