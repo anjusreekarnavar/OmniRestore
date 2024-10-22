@@ -36,7 +36,7 @@ def get_args_parser():
     parser = argparse.ArgumentParser("restoreMAE pre-training", add_help=False)
     parser.add_argument(
         "--batch_size",
-        default=128,
+        default=3,
         type=int,
         help="Batch size per GPU (effective batch size is batch_size * accum_iter * # gpus",
     )
@@ -142,7 +142,7 @@ def get_args_parser():
     parser.add_argument(
         "--world_size", default=1, type=int, help="number of distributed processes"
     )
-    parser.add_argument("--local-rank", default=0, type=int)
+    parser.add_argument("--local_rank", default=0, type=int)
     parser.add_argument("--dist_on_itp", action="store_true")
     parser.add_argument(
         "--dist_url", default="env://", help="url used to set up distributed training"
@@ -153,7 +153,7 @@ def get_args_parser():
 
 def loading_checkpoint(model):
 
-    path = "/home/ven073/anju/dmae2/dmae_base_sigma_0.25_mask_0.75_1100e.pth"
+    path = "/home/joseph/multi_distortion-based_image_restoration/dmae_base_sigma_0.25_mask_0.75_1100e.pth"
 
     pretrained_path = torch.load(path)
 
@@ -264,7 +264,7 @@ def main(args):
     )
 
     # define the model
-    path = "/home/ven073/anju/dmae2/dmae_base_sigma_0.25_mask_0.75_1100e.pth"
+    path = "/home/joseph/multi_distortion-based_image_restoration/dmae_base_sigma_0.25_mask_0.75_1100e.pth"
     shared_encoder = model_restoration_encoder.__dict__[args.model](
         norm_pix_loss=args.norm_pix_loss
     )
