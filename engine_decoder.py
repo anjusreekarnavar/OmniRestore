@@ -27,7 +27,8 @@ def train_one_epoch(
     log_writer,
     args,
 ):
-    mask_ratio = args.mask_ratio
+    mask_ratio_inc = 0.2
+    mask_ratio = args.mask_ratio * (mask_ratio_inc * epoch)
 
     accum_iter = args.accum_iter
 

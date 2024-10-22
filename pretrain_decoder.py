@@ -66,7 +66,7 @@ def get_args_parser():
         help="Use (per-patch) normalized pixels as targets for computing loss",
     )
     parser.set_defaults(norm_pix_loss=False)
-    parser.add_argument("--mask_ratio", default=0.75, type=int, help="masking")
+    parser.add_argument("--mask_ratio", default=0.0, type=int, help="masking")
     parser.add_argument(
         "--weight_decay", type=float, default=0.05, help="weight decay (default: 0.05)"
     )
