@@ -15,6 +15,7 @@ from torchvision import models
 from perceptualloss import LossNetwork
 import PIL
 import time
+import gc
 
 
 def get_free_memory(device="cuda"):
@@ -137,6 +138,9 @@ def train_one_epoch(
                 message = task + "training loss"
                 log_writer.add_scalar(message, reduce_distortion, epoch_1000x)
 
+            del clean_img, distorted
+            gc.collect()
+
         model.eval()
 
         with torch.no_grad():
@@ -194,5 +198,7 @@ def train_one_epoch(
                         },
                         f"{args.output_dir}/{file_name}",
                     )
+                del clean_img, distorted
+                gc.collect()
 
     return model
