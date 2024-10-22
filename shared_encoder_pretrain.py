@@ -5,10 +5,9 @@ import numpy as np
 import os
 from torchvision.utils import save_image
 import torch.nn as nn
-from multi_dataloading import create_dataset_train, create_dataset_val
+from data.multi_dataloading import create_dataset_train, create_dataset_val
 import time
 import sys
-from metrics_eval import Conversion
 from pathlib import Path
 import PIL
 import torch
@@ -20,17 +19,16 @@ from PIL import Image, ImageFilter, ImageOps
 import timm
 from torch.utils.data import DataLoader, random_split
 from create_optimizer_list import create_optimizer
-
 assert timm.__version__ == "0.5.4"  # version check
-from decoder import Decoder
+from model_architecture.decoder import Decoder
 from util import misc
 import yaml
-import model_restoration
+from model_architecturearchitecture.model_architecture import model_restoration_encoder
 from tensorboardX import SummaryWriter
 from shared_encoder_engine import train_one_epoch
 import timm.optim.optim_factory as optim_factory
 from util.misc import NativeScalerWithGradNormCount as NativeScaler
-from multidecoders import MultiImageRestoration
+from model_architecture.model_architecture.multidecoders import MultiImageRestoration
 
 
 def get_args_parser():
@@ -230,7 +228,7 @@ def main(args):
     cudnn.benchmark = True
 
     with open(
-        "/home/joseph/multi_distortion-based_image_restoration/config.yaml", "r"
+        "/home/joseph/multi_distortion-based_image_restoration/config/config.yaml", "r"
     ) as file:
         config = yaml.safe_load(file)
 
@@ -244,7 +242,7 @@ def main(args):
     print("cuda availability", torch.cuda.is_available())
     # define the model
     path = "/home/joseph/multi_distortion-based_image_restoration/dmae_base_sigma_0.25_mask_0.75_1100e.pth"
-    shared_encoder = model_restoration.__dict__[args.model](
+    shared_encoder = model_restoration_encoder.__dict__[args.model](
         norm_pix_loss=args.norm_pix_loss
     )
     pretrained_path = torch.load(path)

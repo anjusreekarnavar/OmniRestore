@@ -10,8 +10,7 @@ from util.misc import NativeScalerWithGradNormCount as NativeScaler
 import util.lr_sched as lr_sched
 from torch.utils.tensorboard import SummaryWriter
 import torchvision.transforms as transforms
-from augmentations import converto_low_resolution, blur_input_image, to_low_resolution
-from temporary import Conversion
+from conversion import Conversion
 from torchvision import models
 from perceptualloss import LossNetwork
 import PIL

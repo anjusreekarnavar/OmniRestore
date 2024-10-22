@@ -5,38 +5,24 @@ import numpy as np
 import os
 from torchvision.utils import save_image
 import torch.nn as nn
-from custom_train_validset import DataLoaderTrain, DataLoaderVal
+from data.custom_train_validset import DataLoaderTrain, DataLoaderVal
 import time
 import sys
-from metrics_eval import AverageMeter, Conversion
-from metrics_eval import compute_psnr_ssim
-from augmentations import converto_low_resolution, blur_input_image
 from pathlib import Path
 import PIL
 import torch
 import torch.backends.cudnn as cudnn
-from multi_decoder_encoder import Model_Restoration_Decoder
+from model_architecture.multi_decoder_encoder import Model_Restoration_Decoder
 import torchvision.transforms as transforms
 import torchvision.datasets as datasets
 from torch.utils.data import DataLoader
 from PIL import Image, ImageFilter, ImageOps
 import timm
-from bkp_files.callback import EarlyStopping
 from torch.utils.data import DataLoader, random_split
-from decoder import Decoder
-from new_decoders import (
-    Denoise_Expert,
-    Super_Expert,
-    Deblur_Expert,
-    Inpaint_Expert,
-    Demask_Expert,
-)
-
+from model_architecture.decoder import Decoder
 assert timm.__version__ == "0.5.4"  # version check
-from decoder import Decoder
 from util import misc
-import model_restoration
-
+from model_architecture import model_restoration_encoder
 # from torch.utils.tensorboard import SummaryWriter
 from tensorboardX import SummaryWriter
 from engine_decoder import train_one_epoch
@@ -275,11 +261,9 @@ def main(args):
         drop_last=True,
     )
 
-    # load the pre trained model
-    print("cuda availability", torch.cuda.is_available())
     # define the model
     path = "/home/ven073/anju/dmae2/dmae_base_sigma_0.25_mask_0.75_1100e.pth"
-    shared_encoder = model_restoration.__dict__[args.model](
+    shared_encoder = model_restoration_encoder.__dict__[args.model](
         norm_pix_loss=args.norm_pix_loss
     )
     pretrained_path = torch.load(path)
