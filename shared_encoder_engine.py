@@ -14,6 +14,30 @@ from conversion import Conversion
 from torchvision import models
 from perceptualloss import LossNetwork
 import PIL
+import time
+
+
+def get_free_memory(device="cuda"):
+    reserved_memory = torch.cuda.memory_reserved(device)
+    allocated_memory = torch.cuda.memory_allocated(device)
+    free_memory = reserved_memory - allocated_memory
+    return free_memory
+
+
+def wait_for_memory(required_memory, device="cuda", check_interval=1.0):
+    while True:
+        free_memory = get_free_memory(device)
+
+        if free_memory >= required_memory:
+            print(f"Enough memory available: {free_memory / (1024**3):.2f} GB")
+            break
+        else:
+            print(
+                f"Not enough memory yet: {free_memory / (1024**3):.2f} GB. Waiting..."
+            )
+            time.sleep(
+                check_interval
+            )  # Wait for the specified interval before checking again
 
 
 def train_one_epoch(
@@ -47,6 +71,14 @@ def train_one_epoch(
         )
 
         for data_iter_step, data_train in enumerate((data_loader_train[task]), 0):
+
+            required_memory = (
+                data_train[0].element_size() * data_train[0].nelement()
+                + data_train[1].element_size() * data_train[1].nelement()
+            )
+
+            # Wait until enough memory is available
+            wait_for_memory(required_memory, device)
 
             clean_img = data_train[0].to(device, non_blocking=True)
             distorted = data_train[1].to(device, non_blocking=True)
@@ -111,6 +143,14 @@ def train_one_epoch(
 
         with torch.no_grad():
             for data_iter_step, data_val in enumerate((data_loader_val[task]), 0):
+
+                required_memory = (
+                    data_train[0].element_size() * data_train[0].nelement()
+                    + data_train[1].element_size() * data_train[1].nelement()
+                )
+
+                # Wait until enough memory is available
+                wait_for_memory(required_memory, device)
 
                 clean_img = data_val[0].to(device, non_blocking=True)
                 distorted = data_val[1].to(device, non_blocking=True)
