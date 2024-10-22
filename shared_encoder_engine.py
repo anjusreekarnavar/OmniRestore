@@ -139,6 +139,7 @@ def train_one_epoch(
                 log_writer.add_scalar(message, reduce_distortion, epoch_1000x)
 
             del clean_img, distorted
+            torch.cuda.empty_cache()
             gc.collect()
 
         model.eval()
@@ -199,6 +200,7 @@ def train_one_epoch(
                         f"{args.output_dir}/{file_name}",
                     )
                 del clean_img, distorted
+                torch.cuda.empty_cache()
                 gc.collect()
 
     return model
