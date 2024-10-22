@@ -1,0 +1,13 @@
+train_ datasets:
+    dataroot_noise_train: /home/joseph/dataset/noisetrain
+    dataroot_blur_train: /home/joseph/dataset/blurtrain
+    dataroot_super_train: /home/joseph/dataset/supertrain
+    dataroot_inpaint_train: /home/joseph/dataset/inpaintrain
+    dataroot_demask_train: /home/joseph/dataset/masktrain 
+val_datasets: 
+    dataroot_noise_val: /home/joseph/dataset/noiseval
+    dataroot_blur_val: /home/joseph/dataset/blurval
+    dataroot_super_val: /home/joseph/dataset/superval
+    dataroot_inpaint_val: /home/joseph/dataset/inpaintval
+    dataroot_demask_val: /home/joseph/dataset/maskval
+

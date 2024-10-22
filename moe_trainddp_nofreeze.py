@@ -5,6 +5,7 @@
 
 
 
+
 import argparse
 import datetime
 import json
@@ -20,19 +21,17 @@ from metrics_eval import AverageMeter,Conversion
 from metrics_eval import compute_psnr_ssim
 from augmentations import converto_low_resolution,blur_input_image
 from pathlib import Path
+from custom_dataset import ImageRestorationDataset,DataLoaderVal
 import PIL
 import torch
-from custom_dataset import ImageRestorationDataset,DataLoaderVal
 import torch.backends.cudnn as cudnn
 from aggregator_moe import MOE
 import torchvision.transforms as transforms
 import torchvision.datasets as datasets
 from torch.utils.data import  DataLoader
 from PIL import Image, ImageFilter,ImageOps
-from custom_dataset import ImageRestorationDataset,DataLoaderVal
-from earlystopping import EarlyStopping
 import timm
-from create_expert_freezed import create_experts_restoration
+from create_experts_notfreezed import create_experts_restoration
 from bkp_files.callback import EarlyStopping
 from torch.utils.data import  DataLoader, random_split
 from decoder import Decoder1,Decoder2,Decoder3,Decoder4,Decoder5
@@ -41,10 +40,10 @@ from util import misc
 import model_restoration
 #from torch.utils.tensorboard import SummaryWriter
 from tensorboardX import SummaryWriter
-from moe_engine_nofreeze import train_one_epoch
+from smoe_engine_freezed import train_one_epoch
 import timm.optim.optim_factory as optim_factory
 from util.misc import NativeScalerWithGradNormCount as NativeScaler
-
+from earlystopping import EarlyStopping
 def get_args_parser():
     parser = argparse.ArgumentParser('restoreMAE pre-training', add_help=False)
     parser.add_argument('--batch_size', default=128, type=int,
@@ -97,7 +96,7 @@ def get_args_parser():
     parser.add_argument('--lr', type=float, default=None, metavar='LR',
                         help='learning rate (absolute lr)')
     parser.add_argument('--blr', type=float, default=1.5e-4, metavar='LR',
-                        help='base learning rate: absolute_lr = base_lr * total_batch_size / 256')#old 1.5e-2
+                        help='base learning rate: absolute_lr = base_lr * total_batch_size / 256')
     parser.add_argument('--min_lr', type=float, default=0., metavar='LR',
                         help='lower lr bound for cyclic schedulers that hit 0')
 
@@ -110,13 +109,10 @@ def get_args_parser():
                         help='dataset path')
     parser.add_argument('--dist_eval', action='store_true', default=False,
                         help='Enabling distributed evaluation (recommended during training for faster monitor')
-    parser.add_argument('--eval', action='store_true',
-                        help='Perform evaluation only')
-    
 
-    parser.add_argument('--output_dir', default='/scratch3/ven073/moe_outputddp',
+    parser.add_argument('--output_dir', default='/scratch3/ven073/moe_output2ddp',
                         help='path where to save, empty for no saving')
-    parser.add_argument('--log_dir', default='/scratch3/ven073/moe_outputddp/log_dir',
+    parser.add_argument('--log_dir', default='/scratch3/ven073/moe_output2ddp/log_dir',
                         help='path where to tensorboard log')
     parser.add_argument('--device', default='cuda',
                         help='device to use for training / testing')
@@ -172,6 +168,7 @@ def main(args):
     #dataset_train = datasets.ImageFolder(os.path.join(args.data_path, 'train'), transform=transform_train)
     dataset_train=DataLoaderVal(train_dir)
     dataset_val=DataLoaderVal(val_dir)
+
     #train_size = int(0.8 * len(dataset_train))  # 80% of the dataset for training
     #test_size = len(dataset_train) - train_size   
     #train_data, test_data = random_split(dataset_train, [train_size, test_size])   
@@ -197,8 +194,7 @@ def main(args):
                       'equal num of samples per-process.')
             sampler_val = torch.utils.data.DistributedSampler(
                 dataset_val, num_replicas=num_tasks, rank=global_rank, shuffle=True)  # shuffle=True to reduce monitor bias
-            sampler_certify = torch.utils.data.DistributedSampler(
-                dataset_certify, num_replicas=num_tasks, rank=global_rank, shuffle=True)  # shuffle=True to reduce monitor bias
+            
         else:
             sampler_val = torch.utils.data.SequentialSampler(dataset_val)
     else:
@@ -223,9 +219,9 @@ def main(args):
         drop_last=True,
     )
     log_writer = SummaryWriter(log_dir=args.log_dir)
+
+
     
-
-
 
               
     #load the pre encoder
@@ -233,6 +229,7 @@ def main(args):
 
 
   
+    #misc.load_model(args=args, model_without_ddp=model_without_ddp, optimizer=optimizer, loss_scaler=loss_scaler)
 
     print(f"Start training for {args.epochs} epochs")
     start_time = time.time()
@@ -250,7 +247,7 @@ def main(args):
         args.lr = args.blr * eff_batch_size / 256
 
 
-    best_psnr=0
+    
     moe=MOE(experts,shared_encoder,args)
     moe=moe.to(args.device)  
     
@@ -258,6 +255,7 @@ def main(args):
     optimizer = torch.optim.AdamW(param_groups, lr=args.lr, betas=(0.9, 0.95))
     loss_scaler = NativeScaler()
     early_stopping = EarlyStopping(patience=10, verbose=True)
+    best_psnr=0
     if args.distributed:
         moe = torch.nn.parallel.DistributedDataParallel(moe, device_ids=[args.gpu], find_unused_parameters=True)
     for epoch in range(args.start_epoch, args.epochs):

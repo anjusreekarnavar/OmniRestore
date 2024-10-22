@@ -5,37 +5,25 @@ import numpy as np
 import os
 from torchvision.utils import save_image
 import torch.nn as nn
-from custom_train_validset import DataLoaderTrain, DataLoaderVal
+from data.custom_train_validset import DataLoaderTrain, DataLoaderVal
 import time
 import sys
-from metrics_eval import AverageMeter, Conversion
-from metrics_eval import compute_psnr_ssim
-from augmentations import converto_low_resolution, blur_input_image
 from pathlib import Path
 import PIL
 import torch
 import torch.backends.cudnn as cudnn
-from multi_decoder_encoder import Model_Restoration_Decoder
+from model_architecture.multi_decoder_encoder import Model_Restoration_Decoder
 import torchvision.transforms as transforms
 import torchvision.datasets as datasets
 from torch.utils.data import DataLoader
 from PIL import Image, ImageFilter, ImageOps
 import timm
-from callback import EarlyStopping
 from torch.utils.data import DataLoader, random_split
-from decoder import Decoder
-from new_decoders import (
-    Denoise_Expert,
-    Super_Expert,
-    Deblur_Expert,
-    Inpaint_Expert,
-    Demask_Expert,
-)
+from model_architecture.decoder import Decoder
 
 assert timm.__version__ == "0.5.4"  # version check
-from decoder import Decoder
 from util import misc
-import model_restoration
+from model_architecture import model_restoration_encoder
 
 # from torch.utils.tensorboard import SummaryWriter
 from tensorboardX import SummaryWriter
@@ -48,7 +36,7 @@ def get_args_parser():
     parser = argparse.ArgumentParser("restoreMAE pre-training", add_help=False)
     parser.add_argument(
         "--batch_size",
-        default=128,
+        default=3,
         type=int,
         help="Batch size per GPU (effective batch size is batch_size * accum_iter * # gpus",
     )
@@ -78,7 +66,7 @@ def get_args_parser():
         help="Use (per-patch) normalized pixels as targets for computing loss",
     )
     parser.set_defaults(norm_pix_loss=False)
-    parser.add_argument("--mask_ratio", default=0.75, type=int, help="masking")
+    parser.add_argument("--mask_ratio", default=0.0, type=int, help="masking")
     parser.add_argument(
         "--weight_decay", type=float, default=0.05, help="weight decay (default: 0.05)"
     )
@@ -154,7 +142,7 @@ def get_args_parser():
     parser.add_argument(
         "--world_size", default=1, type=int, help="number of distributed processes"
     )
-    parser.add_argument("--local-rank", default=0, type=int)
+    parser.add_argument("--local_rank", default=0, type=int)
     parser.add_argument("--dist_on_itp", action="store_true")
     parser.add_argument(
         "--dist_url", default="env://", help="url used to set up distributed training"
@@ -165,7 +153,7 @@ def get_args_parser():
 
 def loading_checkpoint(model):
 
-    path = "/home/ven073/anju/dmae2/dmae_base_sigma_0.25_mask_0.75_1100e.pth"
+    path = "/home/joseph/multi_distortion-based_image_restoration/dmae_base_sigma_0.25_mask_0.75_1100e.pth"
 
     pretrained_path = torch.load(path)
 
@@ -275,11 +263,9 @@ def main(args):
         drop_last=True,
     )
 
-    # load the pre trained model
-    print("cuda availability", torch.cuda.is_available())
     # define the model
-    path = "/home/ven073/anju/dmae2/dmae_base_sigma_0.25_mask_0.75_1100e.pth"
-    shared_encoder = model_restoration.__dict__[args.model](
+    path = "/home/joseph/multi_distortion-based_image_restoration/dmae_base_sigma_0.25_mask_0.75_1100e.pth"
+    shared_encoder = model_restoration_encoder.__dict__[args.model](
         norm_pix_loss=args.norm_pix_loss
     )
     pretrained_path = torch.load(path)
@@ -314,9 +300,14 @@ def main(args):
             model, device_ids=[args.gpu], find_unused_parameters=True
         )
 
+    mask_ratio = args.mask_ratio
+    mask_ratio_inc = 0.2
     for epoch in range(args.start_epoch, args.epochs):
         if args.distributed:
             data_loader_train.sampler.set_epoch(epoch)
+
+        if epoch % 100 == 0:
+            mask_ratio = mask_ratio + mask_ratio_inc
 
         model_trained = train_one_epoch(
             model,
@@ -327,6 +318,7 @@ def main(args):
             loss_scaler,
             epoch,
             log_writer,
+            mask_ratio,
             args,
         )
 

@@ -1,24 +1,12 @@
 import math
 
 
-def adjust_learning_rate(optimizer, epoch, task, args):
+def adjust_learning_rate(optimizer, epoch, args):
     """Decay the learning rate with half-cycle cosine after warmup"""
-
-    if task == "denoising":
-        learning_rate = args.noiselr
-    elif task == "deblurring":
-        learning_rate = args.blurlr
-    elif task == "super_resolution":
-        learning_rate = args.superlr
-    elif task == "inpainting":
-        learning_rate = args.inpaintlr
-    else:
-        learning_rate = args.masklr
-
     if epoch < args.warmup_epochs:
-        lr = learning_rate * epoch / args.warmup_epochs
+        lr = args.lr * epoch / args.warmup_epochs
     else:
-        lr = args.min_lr + (learning_rate - args.min_lr) * 0.5 * (
+        lr = args.min_lr + (args.lr - args.min_lr) * 0.5 * (
             1.0
             + math.cos(
                 math.pi

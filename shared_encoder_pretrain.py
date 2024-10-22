@@ -5,10 +5,9 @@ import numpy as np
 import os
 from torchvision.utils import save_image
 import torch.nn as nn
-from multi_dataloading import create_dataset_train, create_dataset_val
+from data.multi_dataloading import create_dataset_train, create_dataset_val
 import time
 import sys
-from metrics_eval import Conversion
 from pathlib import Path
 import PIL
 import torch
@@ -19,18 +18,18 @@ from torch.utils.data import DataLoader
 from PIL import Image, ImageFilter, ImageOps
 import timm
 from torch.utils.data import DataLoader, random_split
+from create_optimizer_list import create_optimizer
 
 assert timm.__version__ == "0.5.4"  # version check
-from decoder import Decoder
+from model_architecture.decoder import Decoder
 from util import misc
 import yaml
-import model_restoration
-import options as option
+from model_architecture import model_restoration_encoder
 from tensorboardX import SummaryWriter
 from shared_encoder_engine import train_one_epoch
 import timm.optim.optim_factory as optim_factory
 from util.misc import NativeScalerWithGradNormCount as NativeScaler
-from multidecoders import MultiImageRestoration
+from model_architecture.multidecoders import MultiImageRestoration
 
 
 def get_args_parser():
@@ -74,7 +73,35 @@ def get_args_parser():
     )
 
     parser.add_argument(
-        "--lr",
+        "--noiselr",
+        type=float,
+        default=None,
+        metavar="LR",
+        help="learning rate (absolute lr)",
+    )
+    parser.add_argument(
+        "--blurlr",
+        type=float,
+        default=None,
+        metavar="LR",
+        help="learning rate (absolute lr)",
+    )
+    parser.add_argument(
+        "--superlr",
+        type=float,
+        default=None,
+        metavar="LR",
+        help="learning rate (absolute lr)",
+    )
+    parser.add_argument(
+        "--inpaintlr",
+        type=float,
+        default=None,
+        metavar="LR",
+        help="learning rate (absolute lr)",
+    )
+    parser.add_argument(
+        "--masklr",
         type=float,
         default=None,
         metavar="LR",
@@ -84,6 +111,13 @@ def get_args_parser():
         "--blr",
         type=float,
         default=1e-3,
+        metavar="LR",
+        help="base learning rate: absolute_lr = base_lr * total_batch_size / 256",
+    )
+    parser.add_argument(
+        "--mlr",
+        type=float,
+        default=1.5e-3,
         metavar="LR",
         help="base learning rate: absolute_lr = base_lr * total_batch_size / 256",
     )
@@ -144,7 +178,7 @@ def get_args_parser():
     parser.add_argument(
         "--world_size", default=1, type=int, help="number of distributed processes"
     )
-    parser.add_argument("--local-rank", default=0, type=int)
+    parser.add_argument("--local_rank", default=0, type=int)
     parser.add_argument("--dist_on_itp", action="store_true")
     parser.add_argument(
         "--dist_url", default="env://", help="url used to set up distributed training"
@@ -155,7 +189,7 @@ def get_args_parser():
 
 def loading_checkpoint(model):
 
-    path = "/home/ven073/anju/dmae2/dmae_base_sigma_0.25_mask_0.75_1100e.pth"
+    path = "/home/joseph/multi_distortion-based_image_restoration/dmae_base_sigma_0.25_mask_0.75_1100e.pth"
 
     pretrained_path = torch.load(path)
 
@@ -194,7 +228,9 @@ def main(args):
 
     cudnn.benchmark = True
 
-    with open("/home/ven073/anju/dmae2/config.yaml", "r") as file:
+    with open(
+        "/home/joseph/multi_distortion-based_image_restoration/config/config.yaml", "r"
+    ) as file:
         config = yaml.safe_load(file)
 
     data_loader_train = create_dataset_train(config, args)
@@ -206,8 +242,8 @@ def main(args):
     # load the pre trained model
     print("cuda availability", torch.cuda.is_available())
     # define the model
-    path = "/home/ven073/anju/dmae2/dmae_base_sigma_0.25_mask_0.75_1100e.pth"
-    shared_encoder = model_restoration.__dict__[args.model](
+    path = "/home/joseph/multi_distortion-based_image_restoration/dmae_base_sigma_0.25_mask_0.75_1100e.pth"
+    shared_encoder = model_restoration_encoder.__dict__[args.model](
         norm_pix_loss=args.norm_pix_loss
     )
     pretrained_path = torch.load(path)
@@ -231,12 +267,7 @@ def main(args):
     tasks = ["denoising", "deblurring", "super_resolution", "inpainting", "demasking"]
     eff_batch_size = args.batch_size * args.accum_iter * misc.get_world_size()
 
-    if args.lr is None:  # only base_lr is specified
-        args.lr = args.blr * eff_batch_size / 256
-
-    param_groups = optim_factory.add_weight_decay(model, args.weight_decay)
-    optimizer = torch.optim.AdamW(param_groups, lr=args.lr, betas=(0.9, 0.95))
-    print(optimizer)
+    optimizer_dict = create_optimizer(args, model, eff_batch_size)
     loss_scaler = NativeScaler()
 
     start_time = time.time()
@@ -256,7 +287,7 @@ def main(args):
             data_loader_val,
             tasks,
             device,
-            optimizer,
+            optimizer_dict,
             loss_scaler,
             epoch,
             log_writer,

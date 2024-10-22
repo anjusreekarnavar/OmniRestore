@@ -1,0 +1,21 @@
+# Ignore model weights
+*.pth
+
+# Ignore model outputs
+output_dir/
+
+# Ignore IDE-specific files
+.vscode/
+
+__pycache__/
+
+# Ignore compiled Python files
+*.pyc
+bkp_files/*.pyc
+config/*.pyc
+data/*.pyc
+dmae_files/*.pyc
+model_architecture/*.pyc
+test/*.pyc
+util/*.pyc
+
