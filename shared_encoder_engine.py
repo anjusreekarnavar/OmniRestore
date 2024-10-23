@@ -14,6 +14,29 @@ from conversion import Conversion
 from torchvision import models
 from perceptualloss import LossNetwork
 import PIL
+import time
+import gc
+
+
+def get_free_memory(device="cuda"):
+    reserved_memory = torch.cuda.memory_reserved(device)
+    allocated_memory = torch.cuda.memory_allocated(device)
+    free_memory = reserved_memory - allocated_memory
+    return free_memory
+
+
+def wait_for_memory(required_memory, device="cuda", check_interval=1.0):
+    while True:
+        free_memory = get_free_memory(device)
+
+        if free_memory >= required_memory:
+            # print(f"Enough memory available: {free_memory / (1024**3):.2f} GB")
+            break
+        else:
+            # print(
+            #    f"Not enough memory yet: {free_memory / (1024**3):.2f} GB. Waiting..."
+            # )
+            time.sleep(check_interval)
 
 
 def train_one_epoch(
@@ -32,10 +55,8 @@ def train_one_epoch(
 
     accum_iter = args.accum_iter
 
-    for task, optimizer in optimizer_dict.items():
-        optimizer.zero_grad()
-
-    convert = Conversion()
+    # for task, optimizer in optimizer_dict.items():
+    #    optimizer.zero_grad()
 
     # Index of each decoder
     # decoder_dict = {'denoising': 0, 'deblurring': 1, 'super_resolution': 2, 'inpainting': 3, 'demasking': 4 }
@@ -43,7 +64,20 @@ def train_one_epoch(
 
     for task in tasks:
 
+        optimizer_dict[task].zero_grad()
+        req_param = list(model.module.encoder.parameters()) + list(
+            model.module.decoder_dict[task].parameters()
+        )
+
         for data_iter_step, data_train in enumerate((data_loader_train[task]), 0):
+
+            required_memory = (
+                data_train[0].element_size() * data_train[0].nelement()
+                + data_train[1].element_size() * data_train[1].nelement()
+            )
+
+            # Wait until enough memory is available
+            wait_for_memory(required_memory, device)
 
             clean_img = data_train[0].to(device, non_blocking=True)
             distorted = data_train[1].to(device, non_blocking=True)
@@ -70,23 +104,20 @@ def train_one_epoch(
             # decoder_dict(task) will return the index of the current task
             task_output = output[decoder_dict[task]]
 
-            prediction = task_output[0]
             loss = task_output[1]
-            p = convert.unpatchify(prediction)
-            p = convert.denormalization(p)
+            # prediction = task_output[0]
+            # convert = Conversion()
+            # p = convert.unpatchify(prediction)
+            # p = convert.denormalization(p)
 
             task_loss_value = loss.item()
+            print("epoch", epoch, task, "training loss", task_loss_value)
             if not math.isfinite(task_loss_value):
                 print("Loss is {}, stopping training".format(task_loss_value))
                 sys.exit(1)
 
             loss = loss / accum_iter
 
-            req_param = list(model.module.encoder.parameters()) + list(
-                model.module.decoder_dict[task].parameters()
-            )
-
-            print("epoch", epoch, task, "training loss", task_loss_value)
             loss_scaler(
                 loss,
                 optimizer_dict[task],
@@ -107,10 +138,22 @@ def train_one_epoch(
                 message = task + "training loss"
                 log_writer.add_scalar(message, reduce_distortion, epoch_1000x)
 
+            del clean_img, distorted
+            torch.cuda.empty_cache()
+            gc.collect()
+
         model.eval()
 
         with torch.no_grad():
             for data_iter_step, data_val in enumerate((data_loader_val[task]), 0):
+
+                required_memory = (
+                    data_train[0].element_size() * data_train[0].nelement()
+                    + data_train[1].element_size() * data_train[1].nelement()
+                )
+
+                # Wait until enough memory is available
+                wait_for_memory(required_memory, device)
 
                 clean_img = data_val[0].to(device, non_blocking=True)
                 distorted = data_val[1].to(device, non_blocking=True)
@@ -129,15 +172,13 @@ def train_one_epoch(
                 # decoder_dict(task) will return the index of the current task
                 task_output = output[decoder_dict[task]]
 
-                prediction = task_output[0]
                 loss = task_output[1]
-                p = convert.unpatchify(prediction)
-                p = convert.denormalization(p)
-
+                # prediction = task_output[0]
+                # p = convert.unpatchify(prediction)
+                # p = convert.denormalization(p)
                 # save_image(p[0], "/home/ven073/anju/dmae2/denoised.jpg")
 
                 task_loss_value = loss.item()
-
                 print("epoch", epoch, task, "validation loss", task_loss_value)
 
                 reduce_distortion = misc.all_reduce_mean(task_loss_value)
@@ -147,8 +188,8 @@ def train_one_epoch(
                     )
                     message = task + "validation loss"
                     log_writer.add_scalar(message, reduce_distortion, epoch_1000x)
-                if args.output_dir and (epoch % 100 == 0 or epoch + 1 == args.epochs):
 
+                if args.output_dir and (epoch % 100 == 0 or epoch + 1 == args.epochs):
                     file_name = "decoder_" + task + "_epoch" + str(epoch + 1) + ".pth"
                     torch.save(
                         {
@@ -158,5 +199,8 @@ def train_one_epoch(
                         },
                         f"{args.output_dir}/{file_name}",
                     )
+                del clean_img, distorted
+                torch.cuda.empty_cache()
+                gc.collect()
 
     return model
