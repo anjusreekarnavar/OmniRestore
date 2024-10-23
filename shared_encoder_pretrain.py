@@ -206,11 +206,22 @@ def loading_checkpoint(model):
 
 
 def load_decoders(args):
-    expert1 = Decoder(decoder_depth=args.decoder_depth)
-    expert1 = loading_checkpoint(expert1)
-    expert2 = Decoder(decoder_depth=args.decoder_depth2)
-    expert2 = loading_checkpoint(expert2)
-    return expert1, expert2
+    noise_decoder = Decoder(decoder_depth=args.decoder_depth)
+    noise_decoder = loading_checkpoint(noise_decoder)
+
+    blur_decoder = Decoder(decoder_depth=args.decoder_depth)
+    blur_decoder = loading_checkpoint(blur_decoder)
+
+    super_decoder = Decoder(decoder_depth=args.decoder_depth)
+    super_decoder = loading_checkpoint(super_decoder)
+
+    inpaint_decoder = Decoder(decoder_depth=args.decoder_depth)
+    inpaint_decoder = loading_checkpoint(inpaint_decoder)
+
+    demask_decoder = Decoder(decoder_depth=args.decoder_depth)
+    demask_decoder = loading_checkpoint(demask_decoder)
+
+    return noise_decoder, blur_decoder, super_decoder, inpaint_decoder, demask_decoder
 
 
 def main(args):
@@ -258,9 +269,18 @@ def main(args):
     shared_encoder.load_state_dict(pretrained_weights, strict=False)
 
     print("cuda availability", torch.cuda.is_available())
-    decoder1, decoder2 = load_decoders(args)
+    noise_decoder, blur_decoder, super_decoder, inpaint_decoder, demask_decoder = (
+        load_decoders(args)
+    )
 
-    model = MultiImageRestoration(shared_encoder, decoder1, decoder2)
+    model = MultiImageRestoration(
+        shared_encoder,
+        noise_decoder,
+        blur_decoder,
+        super_decoder,
+        inpaint_decoder,
+        demask_decoder,
+    )
     model.to(device)
 
     tasks = ["denoising", "deblurring", "super_resolution", "inpainting", "demasking"]

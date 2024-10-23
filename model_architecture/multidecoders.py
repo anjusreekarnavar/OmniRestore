@@ -3,16 +3,24 @@ import torch
 
 
 class MultiImageRestoration(nn.Module):
-    def __init__(self, encoder, decoder1, decoder2):
+    def __init__(
+        self,
+        encoder,
+        noise_decoder,
+        blur_decoder,
+        super_decoder,
+        inpaint_decoder,
+        demask_decoder,
+    ):
 
         super(MultiImageRestoration, self).__init__()
 
         self.encoder = encoder
-        self.noise_decoder = decoder1
-        self.blur_decoder = decoder1
-        self.super_decoder = decoder1
-        self.inpaint_decoder = decoder2
-        self.mask_decoder = decoder2
+        self.noise_decoder = noise_decoder
+        self.blur_decoder = blur_decoder
+        self.super_decoder = super_decoder
+        self.inpaint_decoder = inpaint_decoder
+        self.mask_decoder = demask_decoder
 
         self.decoder_dict = {
             "denoising": self.noise_decoder,
