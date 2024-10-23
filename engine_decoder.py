@@ -34,7 +34,7 @@ def train_one_epoch(
 
     optimizer.zero_grad()
 
-    convert = Conversion()
+    # convert = Conversion()
 
     for data_iter_step, data_train in enumerate((data_loader_train), 0):
 
@@ -56,25 +56,30 @@ def train_one_epoch(
         with torch.cuda.amp.autocast():
             output, _ = model(clean_img, distorted, mask_ratio)
 
-        prediction = output[0]
+        # prediction = output[0]
         loss = output[1]
         loss_value = loss.item()
 
         if not math.isfinite(loss_value):
             print("Loss is {}, stopping training".format(loss_value))
             sys.exit(1)
+
         loss = loss / accum_iter
         print("epoch", epoch, " training loss", loss_value)
+
         loss_scaler(
             loss,
             optimizer,
             parameters=model.parameters(),
             update_grad=(data_iter_step + 1) % accum_iter == 0,
         )
+
         if (data_iter_step + 1) % accum_iter == 0:
             optimizer.zero_grad()
+
         # Call this function after backpropagation
-        torch.cuda.synchronize()
+        # torch.cuda.synchronize()
+
         reduce_denoise = misc.all_reduce_mean(loss_value)
         if log_writer is not None and (data_iter_step + 1) % accum_iter == 0:
             epoch_1000x = int((data_iter_step / len(data_loader_train) + epoch) * 1000)
@@ -82,6 +87,7 @@ def train_one_epoch(
             # total_loss_denoise+=denoiseloss_value
 
     model.eval()
+
     with torch.no_grad():
         for data_iter_step, data_val in enumerate((data_loader_val), 0):
 
@@ -96,13 +102,13 @@ def train_one_epoch(
 
             with torch.cuda.amp.autocast():
                 output, _ = model(clean_img, distorted, mask_ratio)
-            prediction = output[0]
+            # prediction = output[0]
             loss = output[1]
-
             loss_value = loss.item()
 
             print("epoch", epoch, " validation loss", loss_value)
             reduce_denoise = misc.all_reduce_mean(loss_value)
+
             if log_writer is not None and (data_iter_step + 1) % accum_iter == 0:
                 epoch_1000x = int(
                     (data_iter_step / len(data_loader_val) + epoch) * 1000
@@ -110,6 +116,7 @@ def train_one_epoch(
                 log_writer.add_scalar(
                     "denoisevalidation loss", reduce_denoise, epoch_1000x
                 )
+
             if args.output_dir and (epoch % 100 == 0 or epoch + 1 == args.epochs):
 
                 torch.save(

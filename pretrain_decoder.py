@@ -287,18 +287,17 @@ def main(args):
 
     eff_batch_size = args.batch_size * args.accum_iter * misc.get_world_size()
 
-    if args.lr is None:  # only base_lr is specified
-        args.lr = args.blr * eff_batch_size / 256
-
-    param_groups = optim_factory.add_weight_decay(model, args.weight_decay)
-    optimizer = torch.optim.AdamW(param_groups, lr=args.lr, betas=(0.9, 0.95))
-    print(optimizer)
-    loss_scaler = NativeScaler()
-
     if args.distributed:
         model = torch.nn.parallel.DistributedDataParallel(
             model, device_ids=[args.gpu], find_unused_parameters=True
         )
+
+    if args.lr is None:  # only base_lr is specified
+        args.lr = args.blr * eff_batch_size / 256
+    param_groups = optim_factory.add_weight_decay(model, args.weight_decay)
+    optimizer = torch.optim.AdamW(param_groups, lr=args.lr, betas=(0.9, 0.95))
+    print(optimizer)
+    loss_scaler = NativeScaler()
 
     mask_ratio = args.mask_ratio
     mask_ratio_inc = 0.2
