@@ -301,6 +301,7 @@ def main(args):
 
     mask_ratio = args.mask_ratio
     mask_ratio_inc = 0.2
+    start_time = time.time()
     for epoch in range(args.start_epoch, args.epochs):
         if args.distributed:
             data_loader_train.sampler.set_epoch(epoch)
