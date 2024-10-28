@@ -6,34 +6,27 @@ import os
 #from torchvision.utils import save_image
 import torch.nn as nn
 import time
-from custom_testset import TestDataset
 import sys
-from metrics_eval import AverageMeter,Conversion
-from metrics_eval import compute_psnr_ssim
+from metrics_eval import AverageMeter
 from pathlib import Path
 import PIL
 import torch
 from torchvision.utils import save_image
 from data.custom_dataset import TestDataset
 import torch.backends.cudnn as cudnn
-from skimage.metrics import peak_signal_noise_ratio, structural_similarity
-from metrics2 import calculate_metrics
 import torchvision.transforms as transforms
 import torchvision.datasets as datasets
 from torch.utils.data import  DataLoader
 from PIL import Image, ImageFilter,ImageOps
 import timm
-from callback import EarlyStopping
 from torch.utils.data import  DataLoader, random_split
-from architecture.decoder import Decoder
+from architecture.decoder_with_cnn import Decoder
+from conversion import Conversion
 assert timm.__version__ == "0.5.4"  # version check
 from util import misc
-#from torch.utils.tensorboard import SummaryWriter
 from tensorboardX import SummaryWriter
-from architecture import model_restoration_encoder
+import architecture.model_restoration
 from data.custom_testset import DataNoisy,DataBlurry,DataSuper,DataInpaint,DataMask
-import timm.optim.optim_factory as optim_factory
-from util.misc import NativeScalerWithGradNormCount as NativeScaler
 from skimage.metrics import peak_signal_noise_ratio, structural_similarity
 import lpips
 
@@ -54,19 +47,11 @@ def get_args_parser():
                         help='masking')
     parser.add_argument('--device', default='cuda',
                         help='device to use for training / testing')
-    parser.add_argument('--num_workers', default=1, type=int)
+    parser.add_argument('--num_workers', default=10, type=int)
     parser.add_argument('--pin_mem', action='store_true',
                         help='Pin CPU memory in DataLoader for more efficient (sometimes) transfer to GPU.')
-    parser.add_argument('--no_pin_mem', action='store_false', dest='pin_mem')
     parser.set_defaults(pin_mem=True)
 
-    # distributed training parameters
-    parser.add_argument('--world_size', default=1, type=int,
-                        help='number of distributed processes')
-    parser.add_argument('--local-rank', default=0, type=int)
-    parser.add_argument('--dist_on_itp', action='store_true')
-    parser.add_argument('--dist_url', default='env://',
-                        help='url used to set up distributed training')
 
     return parser
 
@@ -92,56 +77,51 @@ def compute_psnr_ssim(recoverd, clean):
 
 def load_decoders(device):
     denoise_expert=Decoder(decoder_depth=10)
-    checkpoint1 =torch.load('/scratch3/ven073/decoder_noise/decoder_epoch_1.pth',map_location=torch.device('cpu') )
-    denoise_expert.load_state_dict(checkpoint1,strict=False)
-   
-  
-    denoise_expert=denoise_expert.to(device)
+    checkpoint1 =torch.load('/scratch3/ven073/decoder_shared/decoder_denoise_epoch_21.pth',map_location=torch.device('cpu') )
+    denoise_expert.load_state_dict(checkpoint1['model_state_dict'],strict=False)
+    denoise_expert.to(device)
     denoise_expert.eval()
     
     deblur_expert=Decoder(decoder_depth=10)
-    checkpoint2= torch.load('/scratch3/ven073/decoder_blur/decoder_epoch_1.pth',map_location=torch.device('cpu') )
-    deblur_expert.load_state_dict(checkpoint2,strict=False)
-    deblur_expert=deblur_expert.to(device)
+    checkpoint2= torch.load('/scratch3/ven073/decoder_shared/decoder_deblur_epoch_21.pth',map_location=torch.device('cpu') )
+    deblur_expert.load_state_dict(checkpoint2['model_state_dict'],strict=False)
+    deblur_expert.to(device)
     deblur_expert.eval()
     #loading superresolution expert
    
     superr_expert=Decoder(decoder_depth=10)
     #superr_expert=load_model(path_super,superr_expert)
-    checkpoint3= torch.load('/scratch3/ven073/decoder_super/decoder_epoch_1.pth',map_location=torch.device('cpu') )
-    superr_expert.load_state_dict(checkpoint3,strict=False)
+    checkpoint3= torch.load('/scratch3/ven073/decoder_shared/decoder_super_epoch_21.pth',map_location=torch.device('cpu') )
+    superr_expert.load_state_dict(checkpoint3['model_state_dict'],strict=False)
     superr_expert=superr_expert.to(device)
     superr_expert.eval()
     #loading masking expert
-    #masking_expert=Decoder(decoder_depth=16)
+    masking_expert=Decoder(decoder_depth=10)
    
-    #checkpoint4= torch.load('/scratch3/ven073/decoder4/decoder_epoch_1.pth',map_location=torch.device('cpu') )
-    #masking_expert.load_state_dict(checkpoint4['model_state_dict'],strict=False)
-    #masking_expert=masking_expert.to(device)
-    #masking_expert.eval()
+    checkpoint4= torch.load('/scratch3/ven073/decoder_shared/decoder_masking_epoch_21.pth',map_location=torch.device('cpu') )
+    masking_expert.load_state_dict(checkpoint4['model_state_dict'],strict=False)
+    masking_expert.to(device)
+    masking_expert.eval()
     #loading inpaint expert
-    #inpaint_expert=Decoder(decoder_depth=16)
+    inpaint_expert=Decoder(decoder_depth=10)
    
-    #checkpoint5= torch.load('/scratch3/ven073/decoder5/decoder_epoch_1.pth',map_location=torch.device('cpu') )
-    #inpaint_expert.load_state_dict(checkpoint5['model_state_dict'],strict=False)
-    #inpaint_expert=inpaint_expert.to(device)
-    #inpaint_expert.eval()
-    return denoise_expert,superr_expert,deblur_expert#,inpaint_expert,masking_expert
+    checkpoint5= torch.load('/scratch3/ven073/decoder_shared/decoder_inpainting_epoch_21.pth',map_location=torch.device('cpu') )
+    inpaint_expert.load_state_dict(checkpoint5['model_state_dict'],strict=False)
+    inpaint_expert.to(device)
+    inpaint_expert.eval()
+    return denoise_expert,superr_expert,deblur_expert,inpaint_expert,masking_expert
 
 
 def denormalization(imgs,args):
 
         # normalization
         device=args.device
-        mean = torch.tensor([0.485, 0.456, 0.406]).reshape(1, 3, 1, 1)
-        std = torch.tensor([0.229, 0.224, 0.225]).reshape(1, 3, 1, 1)
+        mean = torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1)  # Shape (1, 3, 1, 1) for broadcasting
+        std = torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1)
 
-      
         mean = mean.to(device)
-        std = std.to(device)
-        imgs = (imgs - mean) / std
-       
-        denormalized_image = imgs * self.std + self.mean
+        std = std.to(device) 
+        denormalized_image = imgs * std + mean
         return denormalized_image
         
   
@@ -169,25 +149,12 @@ def main(args):
     print('cuda availability', torch.cuda.is_available())
     device = torch.device(args.device)
     convert=Conversion()
-    shared_encoder1 = model_restor_patch4.__dict__[args.model](norm_pix_loss=args.norm_pix_loss)
-    checkpoint= torch.load('/scratch3/ven073/decoder_noise/model_encoder_1.pth',map_location=torch.device('cpu') )
-    shared_encoder1.load_state_dict(checkpoint,strict=False)
-    shared_encoder1=shared_encoder1.to(device)
-    shared_encoder1.eval()
-
-    shared_encoder2 = model_restor_patch4.__dict__[args.model](norm_pix_loss=args.norm_pix_loss)
-    checkpoint= torch.load('/scratch3/ven073/decoder_blur/model_encoder_1.pth',map_location=torch.device('cpu') )
-    shared_encoder2.load_state_dict(checkpoint,strict=False)
-    shared_encoder2=shared_encoder2.to(device)
-    shared_encoder2.eval()
-    shared_encoder3 = model_restor_patch4.__dict__[args.model](norm_pix_loss=args.norm_pix_loss)
-    checkpoint= torch.load('/scratch3/ven073/decoder_super/model_encoder_1.pth',map_location=torch.device('cpu') )
-    shared_encoder3.load_state_dict(checkpoint,strict=False)
-    shared_encoder3=shared_encoder3.to(device)
-    shared_encoder3.eval()
-   
-    #pretrained_path = torch.load(path)
-    denoise_expert,superr_expert,deblur_expert=load_decoders(device)
+    shared_encoder = model_restoration.__dict__[args.model](norm_pix_loss=args.norm_pix_loss)
+    checkpoint= torch.load('/scratch3/ven073/decoder_shared/shared_encoder_21.pth',map_location=torch.device('cpu') )
+    shared_encoder.load_state_dict(checkpoint['model_state_dict'],strict=False)
+    shared_encoder.to(device)
+    shared_encoder.eval()
+    denoise_expert,superr_expert,deblur_expert,inpaint_expert,masking_expert=load_decoders(device)
 
     test_dir='/scratch3/ven073/test'
     dataset_noisy=DataNoisy(test_dir)
@@ -210,16 +177,19 @@ def main(args):
     with torch.no_grad():   
         for ii, data_val in enumerate((data_loader_noisy), 0): 
             samples = data_val[0]
+            save_image(samples[0],'/home/ven073/anju/original.jpg')
             imgs_noised = data_val[1]
             samples = samples.to(device, non_blocking=True)
             imgs_noised = imgs_noised.to(device, non_blocking=True)
             samples = transforms.Resize((224, 224), interpolation=PIL.Image.BICUBIC)(samples)
             imgs_noised= transforms.Resize((224, 224), interpolation=PIL.Image.BICUBIC)(imgs_noised)
-            latent,mask,ids_restore=shared_encoder1(imgs_noised,args.mask_ratio)
-            prediction_denoise=denoise_expert(samples,latent,ids_restore,mask)
-            denoised_image=convert.unpatchify_patch4(prediction_denoise[0])
-            restored=denormalization(denoised_image)
+            latent,mask,ids_restore=shared_encoder(imgs_noised,args.mask_ratio)
+            prediction_denoise=denoise_expert(samples,latent,ids_restore,mask,args)
+            #denoised_image=convert.unpatchify(prediction_denoise[0])
+            restored=denormalization(prediction_denoise[0],args)
+            save_image(restored[0],'/home/ven073/anju/restored_denorm.jpg')
             restored=torch.clamp(restored,0,1)
+            save_image(restored[0],'/home/ven073/anju/restored_clamp.jpg')
             temp_psnr1, temp_ssim1, N = compute_psnr_ssim(restored, samples)
             psnr_exp1.update(temp_psnr1, N)
             ssim_exp1.update(temp_ssim1, N)
@@ -229,10 +199,10 @@ def main(args):
             lrimage = data_val[1]
             samples = samples.to(device, non_blocking=True)
             lrimage = lrimage.to(device, non_blocking=True)
-            latent,mask,ids_restore=shared_encoder3(lrimage,args.mask_ratio)
-            prediction_superresolve=superr_expert(samples,latent,ids_restore,mask)
-            super_output=convert.unpatchify_patch4(prediction_superresolve[0])
-            restored=denormalization(super_output)
+            latent,mask,ids_restore=shared_encoder(lrimage,args.mask_ratio)
+            prediction_superresolve=superr_expert(samples,latent,ids_restore,mask,args)
+            #super_output=convert.unpatchify(prediction_superresolve[0])
+            restored=convert.denormalization(prediction_superresolve[0])
             restored=torch.clamp(restored,0,1)
             temp_psnr2, temp_ssim2, N = compute_psnr_ssim(restored, samples)
             psnr_exp1.update(temp_psnr2, N)
@@ -243,11 +213,11 @@ def main(args):
             blur_image = data_val[1]
             samples = samples.to(device, non_blocking=True)
             blur_image = blur_image.to(device, non_blocking=True)
-            latent,mask,ids_restore=shared_encoder2(blur_image,args.mask_ratio)
-            prediction_deblur=deblur_expert(samples,latent,ids_restore,mask) 
-            blur_output=convert.unpatchify_patch4(prediction_deblur[0])
+            latent,mask,ids_restore=shared_encoder(blur_image,args.mask_ratio)
+            prediction_deblur=deblur_expert(samples,latent,ids_restore,mask,args) 
+            #blur_output=convert.unpatchify(prediction_deblur[0])
             #blur_output=prediction_deblur[0]
-            restored=denormalization(blur_output)
+            restored=denormalization(prediction_deblur[0],args)
             restored=torch.clamp(restored,0,1)
             temp_psnr3, temp_ssim3, N = compute_psnr_ssim(restored, samples)
             psnr_exp1.update(temp_psnr3, N)
@@ -259,9 +229,9 @@ def main(args):
             samples = samples.to(device, non_blocking=True)
             inpaint_mask = inpaint_mask.to(device, non_blocking=True)   
             latent,mask,ids_restore=shared_encoder(inpaint_mask,args.mask_ratio)
-            prediction_inpaint=inpaint_expert(samples,latent,ids_restore,mask)
-            inpaint_output=convert.unpatchify(prediction_inpaint[0])
-            restored=denormalization(inpaint_output)
+            prediction_inpaint=inpaint_expert(samples,latent,ids_restore,mask,args)
+            #inpaint_output=convert.unpatchify(prediction_inpaint[0])
+            restored=denormalization(prediction_inpaint[0],args)
             restored=torch.clamp(restored,0,1)
             temp_psnr4, temp_ssim4, N = compute_psnr_ssim(restored, samples)
             psnr_exp1.update(temp_psnr4, N)
@@ -273,9 +243,9 @@ def main(args):
             samples = samples.to(device, non_blocking=True)
             patch_mask = patch_mask.to(device, non_blocking=True) 
             latent,mask,ids_restore=shared_encoder(patch_mask,args.mask_ratio)
-            prediction_demask=masking_expert(samples,latent,ids_restore,mask) 
-            mask_output=convert.unpatchify(prediction_demask[0])
-            restored=denormalization(mask_output)
+            prediction_demask=masking_expert(samples,latent,ids_restore,mask,args) 
+            #mask_output=convert.unpatchify(prediction_demask[0])
+            restored=denormalization(prediction_demask[0],args)
             restored=torch.clamp(restored,0,1)
             temp_psnr5, temp_ssim5, N = compute_psnr_ssim(restored, samples)
             psnr_exp1.update(temp_psnr5, N)
