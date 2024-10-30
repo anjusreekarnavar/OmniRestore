@@ -236,13 +236,74 @@ def init_distributed_mode(args):
     setup_for_distributed(args.rank == 0)
 
 
+class NativeScaler_Multimodel:
+    state_dict_key = "amp_scaler"
+
+    def __init__(self):
+        self._scaler = torch.cuda.amp.GradScaler()
+
+    def __call__(self, loss, optimizer,optimizer_enc, clip_grad=2, parameters=None, create_graph=False, update_grad=True):
+
+        self._scaler.scale(loss).backward(create_graph=create_graph)
+        if update_grad:
+            if clip_grad is not None:
+                assert parameters is not None
+                self._scaler.unscale_(optimizer)  # unscale the gradients of optimizer's assigned params in-place
+                self._scaler.unscale_(optimizer_enc)
+                norm = torch.nn.utils.clip_grad_norm_(parameters, clip_grad)
+            else:
+                self._scaler.unscale_(optimizer)
+                self._scaler.unscale_(optimizer_enc)
+                norm = get_grad_norm_(parameters)
+
+            self._scaler.step(optimizer)
+            self._scaler.step(optimizer_enc)
+            self._scaler.update()
+        else:
+            norm = None
+        return norm
+
+    def state_dict(self):
+        return self._scaler.state_dict()
+
+    def load_state_dict(self, state_dict):
+        self._scaler.load_state_dict(state_dict)
+
+class NativeScalerMoE:
+    state_dict_key = "amp_scaler"
+
+    def __init__(self):
+        self._scaler = torch.cuda.amp.GradScaler()
+
+    def __call__(self, loss, optimizer,clip_grad=None, parameters=None, create_graph=False, update_grad=True):
+        self._scaler.scale(loss).backward(create_graph=create_graph)
+        if update_grad:
+            if clip_grad is not None:
+                assert parameters is not None
+                self._scaler.unscale_(optimizer)  # unscale the gradients of optimizer's assigned params in-place
+                norm = torch.nn.utils.clip_grad_norm_(parameters, clip_grad)
+            else:
+                self._scaler.unscale_(optimizer)
+                norm = get_grad_norm_(parameters)
+            self._scaler.step(optimizer)
+            self._scaler.update()
+        else:
+            norm = None
+        return norm
+
+    def state_dict(self):
+        return self._scaler.state_dict()
+
+    def load_state_dict(self, state_dict):
+        self._scaler.load_state_dict(state_dict)
+
 class NativeScalerWithGradNormCount:
     state_dict_key = "amp_scaler"
 
     def __init__(self):
         self._scaler = torch.cuda.amp.GradScaler()
 
-    def __call__(self, loss, optimizer, clip_grad=None, parameters=None, create_graph=False, update_grad=True):
+    def __call__(self, loss, optimizer,clip_grad=None, parameters=None, create_graph=False, update_grad=True):
         self._scaler.scale(loss).backward(create_graph=create_graph)
         if update_grad:
             if clip_grad is not None:
@@ -283,21 +344,33 @@ def get_grad_norm_(parameters, norm_type: float = 2.0) -> torch.Tensor:
 def save_model(args, epoch, model, model_without_ddp, optimizer, loss_scaler):
     output_dir = Path(args.output_dir)
     epoch_name = str(epoch)
+
     if loss_scaler is not None:
-        checkpoint_paths = [output_dir / ('checkpoint-%s.pth' % epoch_name)]
-        for checkpoint_path in checkpoint_paths:
+        checkpoint_paths1 = [output_dir / ('checkpoint-encoder%s.pth' % epoch_name)]
+        for checkpoint_path in checkpoint_paths1:
             to_save = {
-                'model': model_without_ddp.state_dict(),
+                'model': model_without_ddp.encoder.state_dict(),
                 'optimizer': optimizer.state_dict(),
                 'epoch': epoch,
                 'scaler': loss_scaler.state_dict(),
                 'args': args,
             }
+            save_on_master(to_save, checkpoint_path)
 
+        checkpoint_paths2 = [output_dir / ('checkpoint-decoder%s.pth' % epoch_name)]
+        for checkpoint_path in checkpoint_paths2:
+            to_save = {
+                'model': model_without_ddp.decoder.state_dict(),
+                'optimizer': optimizer.state_dict(),
+                'epoch': epoch,
+                'scaler': loss_scaler.state_dict(),
+                'args': args,
+            }
             save_on_master(to_save, checkpoint_path)
     else:
         client_state = {'epoch': epoch}
-        model.save_checkpoint(save_dir=args.output_dir, tag="checkpoint-%s" % epoch_name, client_state=client_state)
+        model.encoder.save_checkpoint(save_dir=args.output_dir, tag="checkpoint_encoder-%s" % epoch_name, client_state=client_state)
+        model.decoder.save_checkpoint(save_dir=args.output_dir, tag="checkpoint_decoder-%s" % epoch_name, client_state=client_state)
 
 
 def load_model(args, model_without_ddp, optimizer, loss_scaler):

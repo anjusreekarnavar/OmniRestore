@@ -16,7 +16,7 @@ from torchvision import datasets, transforms, models
 from timm.models.vision_transformer import PatchEmbed, Block
 import torch.nn.functional as F
 from util.pos_embed import get_2d_sincos_pos_embed
-
+from perceptualloss import LossNetwork
 
 
 
