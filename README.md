@@ -1,25 +1,19 @@
-Installation   
+For setting up the environment
 
 pip install -r requirements.txt
 
 
-Train the baseline model
+Train the baseline module
 
-Training with single-encoder -single decoder (For independently training five experts)
+Combined training with shared-encoder and five decoders 
 
-python -m torch.distributed.launch pretrain_decoder.py --train_data_path path --val_data_path path --log_dir path   --output_dir path  --decoder_depth value --blr value
+python -m torch.distributed.launch --nproc_per_node node_vlaue pretrain_baseline.py --train_data_path path --val_data_path path --log_dir path   --output_dir path  --decoder_depth depthvalue --log_dir path
 
-Training with shared encoder (for combined training)
+For using multigpus include --nproc_per_node=num_gpus, change the num_gpus as per the requirement
 
-python -m torch.distributed.launch shared_encoder_pretrain.py --train_data_path path --val_data_path path --log_dir path   --output_dir path  
+For running the aggregator module  use
 
-
-for using multigpus include --nproc_per_node=num_gpus
-
-
-For running aggregator use
-
-python -m torch.distributed.launch moe_trainddp.py
+python -m torch.distributed.launch --nproc_per_node num_gpus --master_port8871 pretrain_moe.py --output_dir path --log_dir path --train_dir path --val_dir path
 
 
 ## Code Structure
