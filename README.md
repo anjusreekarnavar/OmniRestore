@@ -11,7 +11,7 @@
 
 Conventional image restoration methods often implicitly assume that the degradation type in the input image is "seen" and "known" to the model, meaning it is trained and tested on the same type of degradation. More recent "all-in-one" models are designed to handle only one single degradation type in an image at a time, though the type can vary within a small, predefined set. This paper proposes **OmniRestore**, a novel approach to tackle a new and challenging task: "Omni Restoration", meaning restoring images with random, combined degradations of unspecified numbers and types. In this task, the restoration model must be able to restore images corrupted by multiple degradation types simultaneously, without prior knowledge of the exact types and the number of degradations in the input image. To address this, we devise a Mixture-of-Experts (MoE) architecture with a shared encoder and a group of type-sensitive decoder experts, alongside a two-stage training pipeline to expand the generalizability to various degradation types and their combinations. Extensive experiments demonstrate that our OmniRestore model consistently and significantly outperforms all state-of-the-art (SOTA) single-degradation models, vertical ensembles of those models, and "all-in-one" models on the Omni Restoration task. Our model also surpasses most of the competing models under a single-degradation setting with seen or unseen degradations.
 
-
+[![Paper](ICME 2025)]((https://ieeexplore.ieee.org/document/11209899))
 
 
 For setting up the environment
