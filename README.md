@@ -1,7 +1,9 @@
 **OmniRestore: Robust Universal Image Restoration from Combined and Unspecified Degradations**
 
 
-
+<p align="center">
+  <img src="architecture(1).pdf" alt="OmniRestore Architecture" width="800"/>
+</p>
 
 
 
