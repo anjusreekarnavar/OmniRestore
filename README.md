@@ -2,7 +2,7 @@
 
 
 <p align="center">
-  <img src="architecture(1).pdf" alt="OmniRestore Architecture" width="800"/>
+  <img src="architecture.png" alt="OmniRestore Architecture" width="800"/>
 </p>
 
 
